@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "705861187596",
+    "project_id": "sakaylive-1",
+    "storage_bucket": "sakaylive-1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:705861187596:android:66f17bbf7c8b60c89b5629",
+        "android_client_info": {
+          "package_name": "com.example.sakaylive"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC7RYdQWPYzVtdoPjP2MjgxeElk8ILBDVc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
