@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "SakayLive (Debug)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "toolArgs": [
+        "--dart-define",
+        "ACCESS_TOKEN=pk.eyJ1IjoiY2poZXJuaWEiLCJhIjoiY21rY2w5bG9tMDJlcTNkcHJlZGx2MmZtZSJ9.vSWa4_pLUzBG6gJrAMi5rg"
+      ]
+    }
+  ]
+}
