@@ -59,5 +59,4 @@ class DefaultFirebaseOptions {
     projectId: 'sakaylive-1',
     storageBucket: 'sakaylive-1.firebasestorage.app',
   );
-
 }

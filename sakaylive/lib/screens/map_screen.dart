@@ -1,10 +1,12 @@
-// lib/features/map/map_screen.dart
+import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:sakaylive/screens/login_page.dart';
 import 'package:sakaylive/screens/theme.dart';
-import 'auth_gate.dart';
+import 'package:sakaylive/widgets/sakay_bottom_sheet.dart'; // Import your new widget
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -13,234 +15,290 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  MapboxMap? _mapboxMap;
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-
   // --- CONTROLLERS ---
-  // 1. Add Sheet Controller
+  MapboxMap? _mapboxMap;
+  PointAnnotationManager? _pointAnnotationManager;
+
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
   final TextEditingController _searchController = TextEditingController();
 
-  // State Variables
+  // --- STATE ---
   bool _isFetchingLocation = false;
-  List<Map<String, String>> _searchResults = [];
+  List<Map<String, dynamic>> _currentRoutes = [];
+  String? _selectedRouteNum;
 
   // --- DATA ---
-  final List<Map<String, String>> _allRoutes = [
+  final List<Map<String, dynamic>> _routeTemplates = [
     {
-      "num": "17",
-      "dest": "Villa Baybay",
-      "status": "Arriving in 2 mins",
-      "time": "2 min",
-      "color": "green",
+      "num": "3",
+      "dest": "Ungka via CPU",
+      "color": "blue",
+      "directions": [
+        {"name": "To City Proper", "asset": "assets/routes/route_3.geojson"},
+        {"name": "To Ungka Terminal", "asset": "assets/routes/route_3.geojson"},
+      ],
+      "activeDir": 0,
+      "status": "Every 5 mins",
+      "time": "5 min",
     },
     {
-      "num": "04",
-      "dest": "Ungka via Festive",
-      "status": "Every 10 minutes",
-      "time": "5 min",
-      "color": "blue",
+      "num": "4",
+      "dest": "Ungka via Diversion",
+      "color": "orange",
+      "directions": [
+        {"name": "To City Proper", "asset": "assets/routes/route_4.geojson"},
+        {"name": "To Ungka Terminal", "asset": "assets/routes/route_4.geojson"},
+      ],
+      "activeDir": 0,
+      "status": "Arriving",
+      "time": "2 min",
     },
     {
       "num": "10",
       "dest": "Tagbak Terminal",
-      "status": "Delayed 5 mins",
+      "color": "green",
+      "directions": [
+        {"name": "To City Proper", "asset": "assets/routes/route_10.geojson"},
+        {"name": "To Tagbak", "asset": "assets/routes/route_10.geojson"},
+      ],
+      "activeDir": 0,
+      "status": "Loading",
       "time": "12 min",
-      "color": "orange",
     },
     {
-      "num": "11",
-      "dest": "La Paz via Ticud",
-      "status": "Seats available",
-      "time": "8 min",
-      "color": "purple",
-    },
-    {
-      "num": "01",
-      "dest": "Bo. Obrero Lapuz",
-      "status": "On time",
-      "time": "15 min",
+      "num": "5",
+      "dest": "Festive Walk via SM",
       "color": "red",
+      "directions": [
+        {"name": "To City Proper", "asset": "assets/routes/route_5.geojson"},
+        {"name": "To Festive Walk", "asset": "assets/routes/route_5.geojson"},
+      ],
+      "activeDir": 0,
+      "status": "Departing",
+      "time": "8 min",
+    },
+    {
+      "num": "9",
+      "dest": "Mohon Terminal",
+      "color": "purple",
+      "directions": [
+        {"name": "To City Proper", "asset": "assets/routes/route_9.geojson"},
+        {"name": "To Mohon", "asset": "assets/routes/route_9.geojson"},
+      ],
+      "activeDir": 0,
+      "status": "Delayed",
+      "time": "15 min",
     },
   ];
 
   @override
   void initState() {
     super.initState();
-    _searchResults = _allRoutes;
+    _currentRoutes = List.from(_routeTemplates);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    _sheetController.dispose(); // Dispose sheet controller
+    _sheetController.dispose();
     super.dispose();
   }
 
-  // --- METHODS ---
-
-  void _runSearch(String query) {
-    setState(() {
-      if (query.isEmpty) {
-        _searchResults = _allRoutes;
-      } else {
-        _searchResults = _allRoutes
-            .where(
-              (route) =>
-                  route['dest']!.toLowerCase().contains(query.toLowerCase()) ||
-                  route['num']!.contains(query),
-            )
-            .toList();
-      }
-    });
-  }
-
-  void _selectRoute(String routeNum) {
-    FocusScope.of(context).unfocus();
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text("Selected Route $routeNum")));
-  }
-
-  Future<void> _handleLocationPermission() async {
-    if (_isFetchingLocation) return;
-    setState(() => _isFetchingLocation = true);
-
-    try {
-      geo.Position position = await geo.Geolocator.getCurrentPosition();
-      if (!mounted) return;
-
-      _mapboxMap?.flyTo(
-        CameraOptions(
-          center: Point(
-            coordinates: Position(position.longitude, position.latitude),
-          ),
-          zoom: 15.0,
-        ),
-        MapAnimationOptions(duration: 1000),
-      );
-    } catch (e) {
-      debugPrint("Error getting location: $e");
-    } finally {
-      if (mounted) setState(() => _isFetchingLocation = false);
-    }
-  }
-
+  // --- MAP METHODS ---
   void _onMapCreated(MapboxMap mapboxMap) {
     _mapboxMap = mapboxMap;
     mapboxMap.compass.updateSettings(CompassSettings(enabled: false));
     mapboxMap.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
-
-    const double bottomClearance = 150.0;
-
     mapboxMap.logo.updateSettings(
       LogoSettings(
         position: OrnamentPosition.BOTTOM_LEFT,
-        marginBottom: bottomClearance,
+        marginBottom: 150.0,
         marginLeft: 16.0,
       ),
     );
-
     mapboxMap.attribution.updateSettings(
       AttributionSettings(
         position: OrnamentPosition.BOTTOM_LEFT,
-        marginBottom: bottomClearance,
+        marginBottom: 150.0,
         marginLeft: 100.0,
       ),
     );
-
     mapboxMap.location.updateSettings(
-      LocationComponentSettings(enabled: true, pulsingEnabled: false),
+      LocationComponentSettings(enabled: true, pulsingEnabled: true),
+    );
+    _handleLocationPermission();
+  }
+
+  void _onStyleLoaded(StyleLoadedEventData data) async {
+    if (_mapboxMap == null) return;
+    try {
+      _pointAnnotationManager = await _mapboxMap!.annotations
+          .createPointAnnotationManager();
+      _pointAnnotationManager?.addOnPointAnnotationClickListener(
+        _PointTapHandler(onTap: (annotation) => _onBusClicked(annotation)),
+      );
+    } catch (e) {
+      debugPrint("Error: $e");
+    }
+  }
+
+  // --- LOGIC ---
+  Future<void> _drawRouteLine(Map<String, dynamic> route) async {
+    if (_mapboxMap == null) return;
+    try {
+      int activeIdx = route['activeDir'];
+      String assetPath = route['directions'][activeIdx]['asset'];
+      final String? geojsonString = await _safeLoadAsset(assetPath);
+      if (geojsonString == null) return;
+
+      final style = _mapboxMap!.style;
+      if (await style.styleSourceExists("route-source")) {
+        await style.removeStyleLayer("route-layer");
+        await style.removeStyleSource("route-source");
+      }
+      await style.addSource(
+        GeoJsonSource(id: "route-source", data: geojsonString),
+      );
+      await style.addLayer(
+        LineLayer(
+          id: "route-layer",
+          sourceId: "route-source",
+          lineColor: _getRouteColor(route['color']).value,
+          lineWidth: 5.0,
+          lineCap: LineCap.ROUND,
+          lineJoin: LineJoin.ROUND,
+          lineOpacity: 0.8,
+        ),
+      );
+    } catch (e) {
+      debugPrint("Draw Error: $e");
+    }
+  }
+
+  Future<void> _updateBusMarkers() async {
+    if (_pointAnnotationManager == null) return;
+    await _pointAnnotationManager?.deleteAll();
+    final random = Random();
+
+    for (var route in _currentRoutes) {
+      if (_selectedRouteNum != null && route['num'] != _selectedRouteNum)
+        continue;
+
+      try {
+        String assetPath = route['directions'][route['activeDir']]['asset'];
+        final String? geojsonString = await _safeLoadAsset(assetPath);
+        if (geojsonString == null) continue;
+
+        final Map<String, dynamic> geojsonData = json.decode(geojsonString);
+        List coords = _extractCoordinates(geojsonData);
+
+        if (coords.isNotEmpty) {
+          final randomIndex = random.nextInt(coords.length);
+          route['lat'] = coords[randomIndex][1].toDouble();
+          route['lng'] = coords[randomIndex][0].toDouble();
+
+          await _pointAnnotationManager?.create(
+            PointAnnotationOptions(
+              geometry: Point(
+                coordinates: Position(route['lng'], route['lat']),
+              ),
+              textField: "🚌",
+              textSize: 24.0,
+              textOffset: [0, -0.5],
+              textColor: Colors.black.value,
+              iconImage: "marker-15",
+              iconOpacity: 0,
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint("Spawn Error: $e");
+      }
+    }
+  }
+
+  void _selectRoute(Map<String, dynamic> route) {
+    FocusScope.of(context).unfocus();
+    setState(() => _selectedRouteNum = route['num']);
+    _drawRouteLine(route);
+    _updateBusMarkers();
+    _mapboxMap?.flyTo(
+      CameraOptions(
+        center: Point(coordinates: Position(route['lng'], route['lat'])),
+        zoom: 15.0,
+        pitch: 30.0,
+      ),
+      MapAnimationOptions(duration: 1200),
     );
   }
 
-  // --- UI BUILDER ---
+  void _onBusClicked(PointAnnotation a) {
+    final p = a.geometry;
+    if (p == null) return;
+    final match = _currentRoutes.firstWhere(
+      (r) => (r['lng'] - p.coordinates.lng).abs() < 0.0001,
+      orElse: () => {},
+    );
+    if (match.isNotEmpty) _selectRoute(match);
+  }
 
+  // --- UI BUILDER ---
   @override
   Widget build(BuildContext context) {
     final double bottomPadding = MediaQuery.of(context).padding.bottom;
+
+    // --- COMPACT SIZING LOGIC (Adjusted for Wrapper) ---
+    const double floatMargin = 16.0;
+    const double handleHeight = 24.0;
+    const double searchSectionHeight = 66.0;
+    const double buttonsSectionHeight = 80.0;
+
+    // Height for Mode 1 (Just Search) = 90px
+    final double mode1Pixels = handleHeight + searchSectionHeight;
+
+    // Height for Mode 2 (Search + Buttons) = 170px
+    final double mode2Pixels = mode1Pixels + buttonsSectionHeight;
 
     return Scaffold(
       key: _scaffoldKey,
       resizeToAvoidBottomInset: false,
       extendBody: true,
-      drawer: Drawer(
-        backgroundColor: beige,
-        child: SafeArea(
-          child: Column(
-            children: [
-              Container(
-                height: 120,
-                width: double.infinity,
-                padding: const EdgeInsets.all(20.0),
-                child: Image.asset(
-                  'assets/images/sakaylive_logo.png',
-                  height: 80,
-                  width: 200,
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.payment),
-                      title: const Text("Transit Passes"),
-                      onTap: () {},
-                    ),
-                  ],
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.person),
-                title: const Text("Login"),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (context) => const LoginPage()),
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-          ),
-        ),
-      ),
+      drawer: _buildDrawer(),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final double totalHeight = constraints.maxHeight;
+          final double totalScreenHeight = constraints.maxHeight;
 
-          // --- 1. CALCULATE HEIGHTS ---
-          const double searchSectionHeight = 90.0;
-          const double buttonsSectionHeight = 80.0;
-          const double dividerHeight = 1.0;
-          const double sheetMargin = 16.0;
-
-          // --- 2. SNAP POINTS ---
+          // Mode 1: Min Size
           final double minSheetSize =
-              (searchSectionHeight + bottomPadding + sheetMargin) / totalHeight;
+              (mode1Pixels + floatMargin + bottomPadding) / totalScreenHeight +
+              0.01;
 
+          // Mode 2: Mid Size
           final double midSheetSize =
-              (searchSectionHeight +
-                  buttonsSectionHeight +
-                  dividerHeight +
-                  bottomPadding +
-                  sheetMargin) /
-              totalHeight;
+              (mode2Pixels + floatMargin + bottomPadding) / totalScreenHeight +
+              0.01;
 
+          // Mode 3: Max Size (Fixed to 85%)
           const double maxSheetSize = 0.85;
 
           return Stack(
             children: [
               Positioned.fill(
-                child: RepaintBoundary(
-                  child: MapWidget(
-                    key: const ValueKey("mapbox_main"),
-                    textureView: false,
-                    styleUri: MapboxStyles.MAPBOX_STREETS,
-                    onMapCreated: _onMapCreated,
+                child: MapWidget(
+                  key: const ValueKey("mapbox_main"),
+                  textureView: false,
+                  cameraOptions: CameraOptions(
+                    center: Point(coordinates: Position(122.5644, 10.7202)),
+                    zoom: 13.5,
                   ),
+                  styleUri:
+                      'mapbox://styles/cjhernia/cmkcq0g9d002h01sudbwmfeho',
+                  onMapCreated: _onMapCreated,
+                  onStyleLoadedListener: _onStyleLoaded,
                 ),
               ),
-
               Positioned(
                 top: 0,
                 left: 0,
@@ -254,11 +312,10 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
               ),
-
-              // Location Button
               Positioned(
                 right: 16,
-                bottom: searchSectionHeight + bottomPadding + sheetMargin + 16,
+                // Location button tracks the top of the sheet
+                bottom: (totalScreenHeight * minSheetSize + 10),
                 child: _circularIconButton(
                   _isFetchingLocation
                       ? Icons.hourglass_top
@@ -267,281 +324,46 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
 
+              // NEW: Using the Refactored Widget
               DraggableScrollableSheet(
-                controller: _sheetController, // 2. Assign Controller
-                initialChildSize: minSheetSize,
+                controller: _sheetController,
+                initialChildSize: minSheetSize, // Starts collapsed
                 minChildSize: minSheetSize,
                 maxChildSize: maxSheetSize,
                 snap: true,
                 snapSizes: [minSheetSize, midSheetSize, maxSheetSize],
-                builder:
-                    (BuildContext context, ScrollController scrollController) {
-                      return Padding(
-                        padding: EdgeInsets.only(
-                          left: sheetMargin,
-                          right: sheetMargin,
-                          bottom: sheetMargin + bottomPadding,
-                        ),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: beige,
-                            borderRadius: const BorderRadius.vertical(
-                              top: Radius.circular(20),
-                              bottom: Radius.circular(20),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.15),
-                                blurRadius: 10,
-                                spreadRadius: 2,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: CustomScrollView(
-                            controller: scrollController,
-                            physics: const ClampingScrollPhysics(),
-                            slivers: [
-                              // --- UNIFIED HEADER ---
-                              SliverToBoxAdapter(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    // 1. Search Section
-                                    Container(
-                                      height: searchSectionHeight,
-                                      alignment: Alignment.topCenter,
-                                      child: Column(
-                                        children: [
-                                          const SizedBox(height: 12),
-                                          Center(
-                                            child: Container(
-                                              width: 40,
-                                              height: 4,
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey[400],
-                                                borderRadius:
-                                                    BorderRadius.circular(2),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 12),
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 16.0,
-                                            ),
-                                            child: Container(
-                                              height: 50,
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(25),
-                                                border: Border.all(
-                                                  color: Colors.grey.shade300,
-                                                ),
-                                              ),
-                                              child: Row(
-                                                children: [
-                                                  const SizedBox(width: 16),
-                                                  const Icon(
-                                                    Icons.search,
-                                                    color: Colors.grey,
-                                                  ),
-                                                  const SizedBox(width: 10),
-                                                  Expanded(
-                                                    child: TextField(
-                                                      controller:
-                                                          _searchController,
-                                                      onChanged: _runSearch,
-                                                      // 3. Expand on Tap
-                                                      onTap: () {
-                                                        _sheetController
-                                                            .animateTo(
-                                                              maxSheetSize,
-                                                              duration:
-                                                                  const Duration(
-                                                                    milliseconds:
-                                                                        300,
-                                                                  ),
-                                                              curve: Curves
-                                                                  .easeOut,
-                                                            );
-                                                      },
-                                                      decoration:
-                                                          const InputDecoration(
-                                                            hintText:
-                                                                "Where to?",
-                                                            border: InputBorder
-                                                                .none,
-                                                            hintStyle:
-                                                                TextStyle(
-                                                                  color: Colors
-                                                                      .grey,
-                                                                ),
-                                                            contentPadding:
-                                                                EdgeInsets.only(
-                                                                  bottom: 5,
-                                                                ),
-                                                          ),
-                                                    ),
-                                                  ),
-                                                  if (_searchController
-                                                      .text
-                                                      .isNotEmpty)
-                                                    IconButton(
-                                                      icon: const Icon(
-                                                        Icons.clear,
-                                                        color: Colors.grey,
-                                                        size: 20,
-                                                      ),
-                                                      onPressed: () {
-                                                        _searchController
-                                                            .clear();
-                                                        _runSearch("");
-                                                      },
-                                                    ),
-                                                  const SizedBox(width: 8),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-
-                                    // 2. Buttons Section
-                                    Container(
-                                      height: buttonsSectionHeight,
-                                      alignment: Alignment.topCenter,
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceAround,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.center,
-                                        children: [
-                                          _buildQuickAction(Icons.work, "Work"),
-                                          _buildQuickAction(Icons.home, "Home"),
-                                          _buildQuickAction(
-                                            Icons.star,
-                                            "Saved",
-                                          ),
-                                          _buildQuickAction(
-                                            Icons.history,
-                                            "Recent",
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-
-                                    // 3. Divider
-                                    const Divider(
-                                      thickness: 1,
-                                      height: dividerHeight,
-                                      color: Colors.black12,
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              // --- LIST CONTENT ---
-                              SliverList(
-                                delegate: SliverChildBuilderDelegate((
-                                  context,
-                                  index,
-                                ) {
-                                  final route = _searchResults[index];
-                                  return Column(
-                                    children: [
-                                      ListTile(
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                              vertical: 4,
-                                            ),
-                                        leading: Container(
-                                          width: 45,
-                                          height: 45,
-                                          decoration: BoxDecoration(
-                                            color: _getRouteColor(
-                                              route['color']!,
-                                            ),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.directions_bus,
-                                            color: Colors.white,
-                                            size: 24,
-                                          ),
-                                        ),
-                                        title: Row(
-                                          children: [
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 2,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey[200],
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                route['num']!,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                route['dest']!,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 16,
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        subtitle: Text(
-                                          route['status']!,
-                                          style: TextStyle(
-                                            color: Colors.grey[700],
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                        trailing: Text(
-                                          route['time']!,
-                                          style: const TextStyle(
-                                            color: Colors.black,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                        onTap: () =>
-                                            _selectRoute(route['num']!),
-                                      ),
-                                      const Divider(
-                                        indent: 70,
-                                        endIndent: 16,
-                                        height: 1,
-                                      ),
-                                    ],
-                                  );
-                                }, childCount: _searchResults.length),
-                              ),
-                              const SliverToBoxAdapter(
-                                child: SizedBox(height: 20),
-                              ),
-                            ],
-                          ),
-                        ),
+                builder: (context, scrollController) {
+                  return SakayBottomSheet(
+                    scrollController: scrollController,
+                    searchController: _searchController,
+                    routes: _currentRoutes,
+                    selectedRouteNum: _selectedRouteNum,
+                    bottomPadding: bottomPadding,
+                    onRouteSelected: (route) => _selectRoute(route),
+                    onRouteSwap: (route) {
+                      setState(
+                        () => route['activeDir'] = (route['activeDir'] + 1) % 2,
+                      );
+                      if (_selectedRouteNum == route['num']) {
+                        _drawRouteLine(route);
+                        _updateBusMarkers();
+                      }
+                    },
+                    onSearchTap: () {
+                      _sheetController.animateTo(
+                        0.85,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOut,
                       );
                     },
+                    onSearchClear: () {
+                      _searchController.clear();
+                      setState(() => _selectedRouteNum = null);
+                      _updateBusMarkers();
+                      FocusScope.of(context).unfocus();
+                    },
+                  );
+                },
               ),
             ],
           );
@@ -550,58 +372,117 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // --- HELPER WIDGETS ---
+  // --- HELPERS (Drawer & Buttons remain local to screen) ---
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: beige,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              height: 120,
+              width: double.infinity,
+              padding: const EdgeInsets.all(20.0),
+              child: Image.asset(
+                'assets/images/sakaylive_logo.png',
+                height: 80,
+                errorBuilder: (c, o, s) => const Center(
+                  child: Text(
+                    "SakayLive",
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.payment),
+                    title: const Text("Transit Passes"),
+                    onTap: () {},
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person),
+              title: const Text("Login"),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const LoginPage()),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-  Color _getRouteColor(String colorName) {
-    switch (colorName) {
-      case 'red':
-        return Colors.red.shade700;
-      case 'green':
-        return Colors.green.shade700;
-      case 'blue':
-        return Colors.blue.shade700;
-      case 'purple':
-        return Colors.purple.shade700;
-      case 'orange':
-        return Colors.orange.shade700;
-      default:
-        return Colors.black;
+  Widget _circularIconButton(IconData i, {VoidCallback? onPressed}) =>
+      Container(
+        height: 44,
+        width: 44,
+        decoration: const BoxDecoration(
+          color: beige,
+          shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6)],
+        ),
+        child: IconButton(
+          icon: Icon(i, color: Colors.black87, size: 20),
+          onPressed: onPressed,
+        ),
+      );
+
+  // --- UTILS ---
+  Future<String?> _safeLoadAsset(String path) async {
+    try {
+      return await rootBundle.loadString(path);
+    } catch (e) {
+      return null;
     }
   }
 
-  Widget _buildQuickAction(IconData icon, String label) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        CircleAvatar(
-          radius: 24,
-          backgroundColor: Colors.white,
-          child: Icon(icon, color: Colors.blueGrey),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-        ),
-      ],
-    );
+  List _extractCoordinates(Map<String, dynamic> d) =>
+      d['type'] == 'FeatureCollection'
+      ? d['features'][0]['geometry']['coordinates']
+      : d['geometry']['coordinates'];
+  Color _getRouteColor(String c) {
+    switch (c) {
+      case 'blue':
+        return Colors.blue.shade700;
+      case 'orange':
+        return Colors.orange.shade700;
+      case 'green':
+        return Colors.green.shade700;
+      case 'red':
+        return Colors.red.shade700;
+      default:
+        return Colors.purple.shade700;
+    }
   }
 
-  Widget _circularIconButton(IconData icon, {VoidCallback? onPressed}) {
-    return Container(
-      height: 44,
-      width: 44,
-      decoration: const BoxDecoration(
-        color: beige,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2)),
-        ],
-      ),
-      child: IconButton(
-        icon: Icon(icon, color: Colors.black87, size: 20),
-        onPressed: onPressed,
-      ),
-    );
+  Future<void> _handleLocationPermission() async {
+    setState(() => _isFetchingLocation = true);
+    try {
+      final pos = await geo.Geolocator.getCurrentPosition();
+      _mapboxMap?.flyTo(
+        CameraOptions(
+          center: Point(coordinates: Position(pos.longitude, pos.latitude)),
+          zoom: 14.5,
+        ),
+        MapAnimationOptions(duration: 2000),
+      );
+      await _updateBusMarkers();
+    } catch (e) {
+      debugPrint("Loc: $e");
+    }
+    if (mounted) setState(() => _isFetchingLocation = false);
   }
+}
+
+class _PointTapHandler extends OnPointAnnotationClickListener {
+  final Function(PointAnnotation) onTap;
+  _PointTapHandler({required this.onTap});
+  @override
+  void onPointAnnotationClick(PointAnnotation annotation) => onTap(annotation);
 }
