@@ -1,9 +1,12 @@
 // lib/features/map/map_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart' as geo;
+
 import 'package:sakaylive/screens/login_page.dart';
 import 'package:sakaylive/screens/theme.dart';
+import 'package:sakaylive/screens/conductor/conductor_dashboard.dart';
 import 'auth_gate.dart';
 
 class MapScreen extends StatefulWidget {
@@ -165,6 +168,21 @@ class _MapScreenState extends State<MapScreen> {
       key: _scaffoldKey,
       resizeToAvoidBottomInset: false,
       extendBody: true,
+
+      // ✅ TEMP DEBUG ACCESS (remove later when login routes here)
+      floatingActionButton: FloatingActionButton(
+        heroTag: "conductor_fab",
+        backgroundColor: Colors.black,
+        child: const Icon(Icons.admin_panel_settings, color: Colors.white),
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ConductorDashboard()),
+          );
+        },
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+
       drawer: Drawer(
         backgroundColor: beige,
         child: SafeArea(
@@ -188,6 +206,21 @@ class _MapScreenState extends State<MapScreen> {
                       leading: const Icon(Icons.payment),
                       title: const Text("Transit Passes"),
                       onTap: () {},
+                    ),
+
+                    // ✅ OPTIONAL: Also add Conductor access in drawer
+                    ListTile(
+                      leading: const Icon(Icons.badge),
+                      title: const Text("Conductor Panel"),
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ConductorDashboard(),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -276,272 +309,257 @@ class _MapScreenState extends State<MapScreen> {
                 snapSizes: [minSheetSize, midSheetSize, maxSheetSize],
                 builder:
                     (BuildContext context, ScrollController scrollController) {
-                      return Padding(
-                        padding: EdgeInsets.only(
-                          left: sheetMargin,
-                          right: sheetMargin,
-                          bottom: sheetMargin + bottomPadding,
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      left: sheetMargin,
+                      right: sheetMargin,
+                      bottom: sheetMargin + bottomPadding,
+                    ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: beige,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(20),
+                          bottom: Radius.circular(20),
                         ),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: beige,
-                            borderRadius: const BorderRadius.vertical(
-                              top: Radius.circular(20),
-                              bottom: Radius.circular(20),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.15),
-                                blurRadius: 10,
-                                spreadRadius: 2,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 10,
+                            spreadRadius: 2,
+                            offset: const Offset(0, 4),
                           ),
-                          child: CustomScrollView(
-                            controller: scrollController,
-                            physics: const ClampingScrollPhysics(),
-                            slivers: [
-                              // --- UNIFIED HEADER ---
-                              SliverToBoxAdapter(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    // 1. Search Section
-                                    Container(
-                                      height: searchSectionHeight,
-                                      alignment: Alignment.topCenter,
-                                      child: Column(
-                                        children: [
-                                          const SizedBox(height: 12),
-                                          Center(
-                                            child: Container(
-                                              width: 40,
-                                              height: 4,
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey[400],
-                                                borderRadius:
-                                                    BorderRadius.circular(2),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 12),
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 16.0,
-                                            ),
-                                            child: Container(
-                                              height: 50,
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(25),
-                                                border: Border.all(
-                                                  color: Colors.grey.shade300,
-                                                ),
-                                              ),
-                                              child: Row(
-                                                children: [
-                                                  const SizedBox(width: 16),
-                                                  const Icon(
-                                                    Icons.search,
-                                                    color: Colors.grey,
-                                                  ),
-                                                  const SizedBox(width: 10),
-                                                  Expanded(
-                                                    child: TextField(
-                                                      controller:
-                                                          _searchController,
-                                                      onChanged: _runSearch,
-                                                      // 3. Expand on Tap
-                                                      onTap: () {
-                                                        _sheetController
-                                                            .animateTo(
-                                                              maxSheetSize,
-                                                              duration:
-                                                                  const Duration(
-                                                                    milliseconds:
-                                                                        300,
-                                                                  ),
-                                                              curve: Curves
-                                                                  .easeOut,
-                                                            );
-                                                      },
-                                                      decoration:
-                                                          const InputDecoration(
-                                                            hintText:
-                                                                "Where to?",
-                                                            border: InputBorder
-                                                                .none,
-                                                            hintStyle:
-                                                                TextStyle(
-                                                                  color: Colors
-                                                                      .grey,
-                                                                ),
-                                                            contentPadding:
-                                                                EdgeInsets.only(
-                                                                  bottom: 5,
-                                                                ),
-                                                          ),
-                                                    ),
-                                                  ),
-                                                  if (_searchController
-                                                      .text
-                                                      .isNotEmpty)
-                                                    IconButton(
-                                                      icon: const Icon(
-                                                        Icons.clear,
-                                                        color: Colors.grey,
-                                                        size: 20,
-                                                      ),
-                                                      onPressed: () {
-                                                        _searchController
-                                                            .clear();
-                                                        _runSearch("");
-                                                      },
-                                                    ),
-                                                  const SizedBox(width: 8),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-
-                                    // 2. Buttons Section
-                                    Container(
-                                      height: buttonsSectionHeight,
-                                      alignment: Alignment.topCenter,
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceAround,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.center,
-                                        children: [
-                                          _buildQuickAction(Icons.work, "Work"),
-                                          _buildQuickAction(Icons.home, "Home"),
-                                          _buildQuickAction(
-                                            Icons.star,
-                                            "Saved",
-                                          ),
-                                          _buildQuickAction(
-                                            Icons.history,
-                                            "Recent",
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-
-                                    // 3. Divider
-                                    const Divider(
-                                      thickness: 1,
-                                      height: dividerHeight,
-                                      color: Colors.black12,
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              // --- LIST CONTENT ---
-                              SliverList(
-                                delegate: SliverChildBuilderDelegate((
-                                  context,
-                                  index,
-                                ) {
-                                  final route = _searchResults[index];
-                                  return Column(
+                        ],
+                      ),
+                      child: CustomScrollView(
+                        controller: scrollController,
+                        physics: const ClampingScrollPhysics(),
+                        slivers: [
+                          // --- UNIFIED HEADER ---
+                          SliverToBoxAdapter(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // 1. Search Section
+                                Container(
+                                  height: searchSectionHeight,
+                                  alignment: Alignment.topCenter,
+                                  child: Column(
                                     children: [
-                                      ListTile(
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                              vertical: 4,
-                                            ),
-                                        leading: Container(
-                                          width: 45,
-                                          height: 45,
+                                      const SizedBox(height: 12),
+                                      Center(
+                                        child: Container(
+                                          width: 40,
+                                          height: 4,
                                           decoration: BoxDecoration(
-                                            color: _getRouteColor(
-                                              route['color']!,
-                                            ),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.directions_bus,
-                                            color: Colors.white,
-                                            size: 24,
+                                            color: Colors.grey[400],
+                                            borderRadius:
+                                                BorderRadius.circular(2),
                                           ),
                                         ),
-                                        title: Row(
-                                          children: [
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 2,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey[200],
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                route['num']!,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                route['dest']!,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 16,
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        subtitle: Text(
-                                          route['status']!,
-                                          style: TextStyle(
-                                            color: Colors.grey[700],
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                        trailing: Text(
-                                          route['time']!,
-                                          style: const TextStyle(
-                                            color: Colors.black,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                        onTap: () =>
-                                            _selectRoute(route['num']!),
                                       ),
-                                      const Divider(
-                                        indent: 70,
-                                        endIndent: 16,
-                                        height: 1,
+                                      const SizedBox(height: 12),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16.0,
+                                        ),
+                                        child: Container(
+                                          height: 50,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(25),
+                                            border: Border.all(
+                                              color: Colors.grey.shade300,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              const SizedBox(width: 16),
+                                              const Icon(
+                                                Icons.search,
+                                                color: Colors.grey,
+                                              ),
+                                              const SizedBox(width: 10),
+                                              Expanded(
+                                                child: TextField(
+                                                  controller: _searchController,
+                                                  onChanged: _runSearch,
+                                                  // 3. Expand on Tap
+                                                  onTap: () {
+                                                    _sheetController.animateTo(
+                                                      maxSheetSize,
+                                                      duration:
+                                                          const Duration(
+                                                        milliseconds: 300,
+                                                      ),
+                                                      curve: Curves.easeOut,
+                                                    );
+                                                  },
+                                                  decoration:
+                                                      const InputDecoration(
+                                                    hintText: "Where to?",
+                                                    border: InputBorder.none,
+                                                    hintStyle: TextStyle(
+                                                      color: Colors.grey,
+                                                    ),
+                                                    contentPadding:
+                                                        EdgeInsets.only(
+                                                      bottom: 5,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              if (_searchController
+                                                  .text.isNotEmpty)
+                                                IconButton(
+                                                  icon: const Icon(
+                                                    Icons.clear,
+                                                    color: Colors.grey,
+                                                    size: 20,
+                                                  ),
+                                                  onPressed: () {
+                                                    _searchController.clear();
+                                                    _runSearch("");
+                                                  },
+                                                ),
+                                              const SizedBox(width: 8),
+                                            ],
+                                          ),
+                                        ),
                                       ),
                                     ],
-                                  );
-                                }, childCount: _searchResults.length),
-                              ),
-                              const SliverToBoxAdapter(
-                                child: SizedBox(height: 20),
-                              ),
-                            ],
+                                  ),
+                                ),
+
+                                // 2. Buttons Section
+                                Container(
+                                  height: buttonsSectionHeight,
+                                  alignment: Alignment.topCenter,
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceAround,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      _buildQuickAction(Icons.work, "Work"),
+                                      _buildQuickAction(Icons.home, "Home"),
+                                      _buildQuickAction(Icons.star, "Saved"),
+                                      _buildQuickAction(
+                                        Icons.history,
+                                        "Recent",
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                // 3. Divider
+                                const Divider(
+                                  thickness: 1,
+                                  height: dividerHeight,
+                                  color: Colors.black12,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
+
+                          // --- LIST CONTENT ---
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final route = _searchResults[index];
+                                return Column(
+                                  children: [
+                                    ListTile(
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 4,
+                                      ),
+                                      leading: Container(
+                                        width: 45,
+                                        height: 45,
+                                        decoration: BoxDecoration(
+                                          color: _getRouteColor(
+                                            route['color']!,
+                                          ),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.directions_bus,
+                                          color: Colors.white,
+                                          size: 24,
+                                        ),
+                                      ),
+                                      title: Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey[200],
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              route['num']!,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              route['dest']!,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      subtitle: Text(
+                                        route['status']!,
+                                        style: TextStyle(
+                                          color: Colors.grey[700],
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      trailing: Text(
+                                        route['time']!,
+                                        style: const TextStyle(
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      onTap: () => _selectRoute(route['num']!),
+                                    ),
+                                    const Divider(
+                                      indent: 70,
+                                      endIndent: 16,
+                                      height: 1,
+                                    ),
+                                  ],
+                                );
+                              },
+                              childCount: _searchResults.length,
+                            ),
+                          ),
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: 20),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ],
           );
