@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:sakaylive/screens/theme.dart'; // Ensure this path matches your project
+import 'package:sakaylive/screens/theme.dart';
 
 class SakayBottomSheet extends StatelessWidget {
   final ScrollController scrollController;
@@ -34,7 +34,6 @@ class SakayBottomSheet extends StatelessWidget {
     const double margin = 16.0;
 
     return Padding(
-      // Floating margin effect
       padding: EdgeInsets.fromLTRB(margin, 0, margin, margin + bottomPadding),
       child: Container(
         decoration: BoxDecoration(
@@ -59,7 +58,6 @@ class SakayBottomSheet extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const SizedBox(height: 12),
-                    // Drag Handle
                     Container(
                       width: 40,
                       height: 4,
@@ -91,7 +89,6 @@ class SakayBottomSheet extends StatelessWidget {
                 childCount: routes.length,
               ),
             ),
-            // Extra padding to prevent clipping at the bottom
             const SliverToBoxAdapter(child: SizedBox(height: 20)),
           ],
         ),
@@ -171,7 +168,6 @@ class SakayBottomSheet extends StatelessWidget {
   }
 }
 
-// Private component for the list items to keep things tidy
 class _RouteTile extends StatelessWidget {
   final Map<String, dynamic> route;
   final VoidCallback onTap;
@@ -195,6 +191,8 @@ class _RouteTile extends StatelessWidget {
         return Colors.green.shade700;
       case 'red':
         return Colors.red.shade700;
+      case 'grey':
+        return Colors.grey.shade700;
       default:
         return Colors.purple.shade700;
     }
@@ -203,6 +201,8 @@ class _RouteTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _getRouteColor(route['color']);
+    // Check if this is a ROUTE or a PLACE
+    final isPlace = route['type'] == 'place';
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -215,11 +215,16 @@ class _RouteTile extends StatelessWidget {
           minVerticalPadding: 12,
           leading: CircleAvatar(
             backgroundColor: color,
-            child: const Icon(Icons.directions_bus, color: Colors.white),
+            child: Icon(
+              isPlace ? Icons.location_on : Icons.directions_bus,
+              color: Colors.white,
+            ),
           ),
           title: Text(
             route['dest'],
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -227,42 +232,54 @@ class _RouteTile extends StatelessWidget {
               Text(
                 route['status'],
                 style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 2),
-              Row(
-                children: [
-                  Icon(Icons.swap_calls, size: 14, color: color),
-                  const SizedBox(width: 4),
-                  Text(
-                    route['directions'][route['activeDir']]['name'],
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+              // Only show direction/swap info if it's a BUS ROUTE
+              if (!isPlace)
+                Row(
+                  children: [
+                    Icon(Icons.swap_calls, size: 14, color: color),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        route['directions'][route['activeDir']]['name'],
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
             ],
           ),
-          trailing: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                route['time'],
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+          trailing: isPlace
+              ? const Icon(
+                  Icons.arrow_forward_ios,
+                  size: 16,
+                  color: Colors.grey,
+                )
+              : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      route['time'],
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    InkWell(
+                      onTap: onSwap,
+                      child: const Padding(
+                        padding: EdgeInsets.all(4.0),
+                        child: Icon(Icons.compare_arrows, size: 20),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              InkWell(
-                onTap: onSwap,
-                child: const Padding(
-                  padding: EdgeInsets.all(4.0),
-                  child: Icon(Icons.compare_arrows, size: 20),
-                ),
-              ),
-            ],
-          ),
           onTap: onTap,
         ),
         const Divider(indent: 70, endIndent: 16, height: 1),

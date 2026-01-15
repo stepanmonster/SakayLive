@@ -19,6 +19,7 @@ dependencies:
   firebase_database: ^12.1.1
   flutter_dotenv: ^6.0.0
   geolocator: ^14.0.2
+  mapbox_search: ^4.4.0
 
 dev_dependencies:
   flutter_test:

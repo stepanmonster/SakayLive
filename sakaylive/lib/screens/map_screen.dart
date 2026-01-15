@@ -1,12 +1,16 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart' as geo;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+// Import package and hide Color to prevent conflicts
+import 'package:mapbox_search/mapbox_search.dart' hide Color;
 import 'package:sakaylive/screens/login_page.dart';
 import 'package:sakaylive/screens/theme.dart';
-import 'package:sakaylive/widgets/sakay_bottom_sheet.dart'; // Import your new widget
+import 'package:sakaylive/widgets/sakay_bottom_sheet.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -24,14 +28,23 @@ class _MapScreenState extends State<MapScreen> {
       DraggableScrollableController();
   final TextEditingController _searchController = TextEditingController();
 
+  // --- SEARCH CONFIG ---
+  // FIXED: Using GeoCoding class (Wrapper) which takes params in constructor
+  late GeoCoding _geocoding;
+  Timer? _debounce;
+
   // --- STATE ---
   bool _isFetchingLocation = false;
-  List<Map<String, dynamic>> _currentRoutes = [];
+  List<Map<String, dynamic>> _displayList = [];
   String? _selectedRouteNum;
 
-  // --- DATA ---
-  final List<Map<String, dynamic>> _routeTemplates = [
+  // Store user location for search bias
+  geo.Position? _userLocation;
+
+  // --- DATA (Local Routes) ---
+  final List<Map<String, dynamic>> _localRoutes = [
     {
+      "type": "route",
       "num": "3",
       "dest": "Ungka via CPU",
       "color": "blue",
@@ -44,6 +57,7 @@ class _MapScreenState extends State<MapScreen> {
       "time": "5 min",
     },
     {
+      "type": "route",
       "num": "4",
       "dest": "Ungka via Diversion",
       "color": "orange",
@@ -56,6 +70,7 @@ class _MapScreenState extends State<MapScreen> {
       "time": "2 min",
     },
     {
+      "type": "route",
       "num": "10",
       "dest": "Tagbak Terminal",
       "color": "green",
@@ -68,6 +83,7 @@ class _MapScreenState extends State<MapScreen> {
       "time": "12 min",
     },
     {
+      "type": "route",
       "num": "5",
       "dest": "Festive Walk via SM",
       "color": "red",
@@ -80,6 +96,7 @@ class _MapScreenState extends State<MapScreen> {
       "time": "8 min",
     },
     {
+      "type": "route",
       "num": "9",
       "dest": "Mohon Terminal",
       "color": "purple",
@@ -96,17 +113,173 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
-    _currentRoutes = List.from(_routeTemplates);
+    _displayList = List.from(_localRoutes);
+
+    // 1. Get Token from Env
+    final String token = dotenv.get('MAPBOX_ACCESS_TOKEN', fallback: '');
+
+    // 2. Initialize GeoCoding with Constructor Constraints
+    if (token.isNotEmpty) {
+      MapBoxSearch.init(token); // Global init
+
+      // FIXED: 'country' and 'limit' are defined HERE in the constructor
+      _geocoding = GeoCoding(
+        limit: 5,
+        country: "PH", // Restricts to Philippines
+        types: [PlaceType.place, PlaceType.address, PlaceType.poi],
+      );
+    } else {
+      debugPrint("⚠️ WARNING: Mapbox Access Token is missing in .env");
+      _geocoding = GeoCoding(limit: 5, country: "PH");
+    }
+
+    _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     _sheetController.dispose();
     super.dispose();
   }
 
-  // --- MAP METHODS ---
+  // --- SEARCH LOGIC (Fixed for GeoCoding Wrapper) ---
+  void _onSearchChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    final query = _searchController.text;
+
+    if (query.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _displayList = List.from(_localRoutes);
+          _selectedRouteNum = null;
+        });
+      }
+      _updateBusMarkers();
+      return;
+    }
+
+    // Local Filter
+    final localResults = _localRoutes.where((route) {
+      final num = route['num'].toString().toLowerCase();
+      final dest = route['dest'].toString().toLowerCase();
+      return num.contains(query.toLowerCase()) ||
+          dest.contains(query.toLowerCase());
+    }).toList();
+
+    if (mounted) setState(() => _displayList = localResults);
+
+    // API Search
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
+      if (query.length < 3) return;
+
+      try {
+        final double biasLat = _userLocation?.latitude ?? 10.7202;
+        final double biasLng = _userLocation?.longitude ?? 122.5644;
+
+        // FIXED: Using getPlaces() (not forward)
+        // FIXED: proximity uses Record syntax (lat: ..., long: ...)
+        final response = await _geocoding.getPlaces(
+          query,
+          proximity: Proximity.LatLong(lat: biasLat, long: biasLng),
+        );
+
+        response.fold(
+          (success) {
+            // success is List<MapBoxPlace>
+            final formattedApiResults = success.map((place) {
+              // Extract coords from the record or object
+              final lat = place.center?.lat ?? 0.0;
+              final long = place.center?.long ?? 0.0;
+
+              return {
+                "type": "place",
+                "num": "📍",
+                "dest": place.text ?? "Unknown",
+                "status": place.placeName ?? "",
+                "color": "grey",
+                "coords": (lat: lat, long: long),
+                "time": "",
+              };
+            }).toList();
+
+            if (mounted) {
+              setState(() {
+                _displayList = [...localResults, ...formattedApiResults];
+              });
+            }
+          },
+          (failure) {
+            debugPrint("API Error: ${failure.message}");
+          },
+        );
+      } catch (e) {
+        debugPrint("Exception during search: $e");
+      }
+    });
+  }
+
+  // --- SELECTION LOGIC ---
+  void _handleItemSelection(Map<String, dynamic> item) {
+    if (item['type'] == 'route') {
+      _selectRoute(item);
+    } else {
+      _selectApiPlace(item);
+    }
+  }
+
+  void _selectApiPlace(Map<String, dynamic> place) async {
+    FocusScope.of(context).unfocus();
+
+    // Safely extract from Record
+    final coords = place['coords'];
+    final double lat = coords.lat;
+    final double long = coords.long;
+
+    if (_pointAnnotationManager != null) {
+      await _pointAnnotationManager?.deleteAll();
+      await _pointAnnotationManager?.create(
+        PointAnnotationOptions(
+          geometry: Point(coordinates: Position(long, lat)),
+          textField: "📍",
+          textSize: 30,
+          textOffset: [0, -0.5],
+          textColor: Colors.red.value,
+        ),
+      );
+    }
+
+    _mapboxMap?.flyTo(
+      CameraOptions(
+        center: Point(coordinates: Position(long, lat)),
+        zoom: 16.0,
+      ),
+      MapAnimationOptions(duration: 1500),
+    );
+  }
+
+  void _selectRoute(Map<String, dynamic> route) {
+    FocusScope.of(context).unfocus();
+    setState(() => _selectedRouteNum = route['num']);
+    _drawRouteLine(route);
+    _updateBusMarkers();
+    _mapboxMap?.flyTo(
+      CameraOptions(
+        center: Point(
+          coordinates: Position(
+            route['lng'] ?? 122.5644,
+            route['lat'] ?? 10.7202,
+          ),
+        ),
+        zoom: 15.0,
+        pitch: 30.0,
+      ),
+      MapAnimationOptions(duration: 1200),
+    );
+  }
+
+  // --- MAP & MARKER LOGIC ---
   void _onMapCreated(MapboxMap mapboxMap) {
     _mapboxMap = mapboxMap;
     mapboxMap.compass.updateSettings(CompassSettings(enabled: false));
@@ -144,7 +317,6 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // --- LOGIC ---
   Future<void> _drawRouteLine(Map<String, dynamic> route) async {
     if (_mapboxMap == null) return;
     try {
@@ -182,7 +354,7 @@ class _MapScreenState extends State<MapScreen> {
     await _pointAnnotationManager?.deleteAll();
     final random = Random();
 
-    for (var route in _currentRoutes) {
+    for (var route in _localRoutes) {
       if (_selectedRouteNum != null && route['num'] != _selectedRouteNum)
         continue;
 
@@ -219,25 +391,10 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _selectRoute(Map<String, dynamic> route) {
-    FocusScope.of(context).unfocus();
-    setState(() => _selectedRouteNum = route['num']);
-    _drawRouteLine(route);
-    _updateBusMarkers();
-    _mapboxMap?.flyTo(
-      CameraOptions(
-        center: Point(coordinates: Position(route['lng'], route['lat'])),
-        zoom: 15.0,
-        pitch: 30.0,
-      ),
-      MapAnimationOptions(duration: 1200),
-    );
-  }
-
   void _onBusClicked(PointAnnotation a) {
     final p = a.geometry;
     if (p == null) return;
-    final match = _currentRoutes.firstWhere(
+    final match = _localRoutes.firstWhere(
       (r) => (r['lng'] - p.coordinates.lng).abs() < 0.0001,
       orElse: () => {},
     );
@@ -248,17 +405,12 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final double bottomPadding = MediaQuery.of(context).padding.bottom;
-
-    // --- COMPACT SIZING LOGIC (Adjusted for Wrapper) ---
     const double floatMargin = 16.0;
     const double handleHeight = 24.0;
     const double searchSectionHeight = 66.0;
     const double buttonsSectionHeight = 80.0;
 
-    // Height for Mode 1 (Just Search) = 90px
     final double mode1Pixels = handleHeight + searchSectionHeight;
-
-    // Height for Mode 2 (Search + Buttons) = 170px
     final double mode2Pixels = mode1Pixels + buttonsSectionHeight;
 
     return Scaffold(
@@ -269,18 +421,10 @@ class _MapScreenState extends State<MapScreen> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final double totalScreenHeight = constraints.maxHeight;
-
-          // Mode 1: Min Size
           final double minSheetSize =
-              (mode1Pixels + floatMargin + bottomPadding) / totalScreenHeight +
-              0.01;
-
-          // Mode 2: Mid Size
+              (mode1Pixels + floatMargin + bottomPadding) / totalScreenHeight;
           final double midSheetSize =
-              (mode2Pixels + floatMargin + bottomPadding) / totalScreenHeight +
-              0.01;
-
-          // Mode 3: Max Size (Fixed to 85%)
+              (mode2Pixels + floatMargin + bottomPadding) / totalScreenHeight;
           const double maxSheetSize = 0.85;
 
           return Stack(
@@ -314,8 +458,7 @@ class _MapScreenState extends State<MapScreen> {
               ),
               Positioned(
                 right: 16,
-                // Location button tracks the top of the sheet
-                bottom: (totalScreenHeight * minSheetSize + 10),
+                bottom: (totalScreenHeight * minSheetSize) + 10,
                 child: _circularIconButton(
                   _isFetchingLocation
                       ? Icons.hourglass_top
@@ -323,11 +466,9 @@ class _MapScreenState extends State<MapScreen> {
                   onPressed: _handleLocationPermission,
                 ),
               ),
-
-              // NEW: Using the Refactored Widget
               DraggableScrollableSheet(
                 controller: _sheetController,
-                initialChildSize: minSheetSize, // Starts collapsed
+                initialChildSize: minSheetSize,
                 minChildSize: minSheetSize,
                 maxChildSize: maxSheetSize,
                 snap: true,
@@ -336,17 +477,19 @@ class _MapScreenState extends State<MapScreen> {
                   return SakayBottomSheet(
                     scrollController: scrollController,
                     searchController: _searchController,
-                    routes: _currentRoutes,
+                    routes: _displayList,
                     selectedRouteNum: _selectedRouteNum,
                     bottomPadding: bottomPadding,
-                    onRouteSelected: (route) => _selectRoute(route),
-                    onRouteSwap: (route) {
-                      setState(
-                        () => route['activeDir'] = (route['activeDir'] + 1) % 2,
-                      );
-                      if (_selectedRouteNum == route['num']) {
-                        _drawRouteLine(route);
-                        _updateBusMarkers();
+                    onRouteSelected: (item) => _handleItemSelection(item),
+                    onRouteSwap: (item) {
+                      if (item['type'] == 'route') {
+                        setState(
+                          () => item['activeDir'] = (item['activeDir'] + 1) % 2,
+                        );
+                        if (_selectedRouteNum == item['num']) {
+                          _drawRouteLine(item);
+                          _updateBusMarkers();
+                        }
                       }
                     },
                     onSearchTap: () {
@@ -358,9 +501,12 @@ class _MapScreenState extends State<MapScreen> {
                     },
                     onSearchClear: () {
                       _searchController.clear();
-                      setState(() => _selectedRouteNum = null);
-                      _updateBusMarkers();
                       FocusScope.of(context).unfocus();
+                      setState(() {
+                        _selectedRouteNum = null;
+                        _displayList = List.from(_localRoutes);
+                      });
+                      _updateBusMarkers();
                     },
                   );
                 },
@@ -372,7 +518,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // --- HELPERS (Drawer & Buttons remain local to screen) ---
+  // --- HELPERS ---
   Widget _buildDrawer() {
     return Drawer(
       backgroundColor: beige,
@@ -433,7 +579,6 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
 
-  // --- UTILS ---
   Future<String?> _safeLoadAsset(String path) async {
     try {
       return await rootBundle.loadString(path);
@@ -446,6 +591,7 @@ class _MapScreenState extends State<MapScreen> {
       d['type'] == 'FeatureCollection'
       ? d['features'][0]['geometry']['coordinates']
       : d['geometry']['coordinates'];
+
   Color _getRouteColor(String c) {
     switch (c) {
       case 'blue':
@@ -456,6 +602,8 @@ class _MapScreenState extends State<MapScreen> {
         return Colors.green.shade700;
       case 'red':
         return Colors.red.shade700;
+      case 'grey':
+        return Colors.grey.shade700;
       default:
         return Colors.purple.shade700;
     }
@@ -465,6 +613,10 @@ class _MapScreenState extends State<MapScreen> {
     setState(() => _isFetchingLocation = true);
     try {
       final pos = await geo.Geolocator.getCurrentPosition();
+
+      // Update user location for search bias
+      setState(() => _userLocation = pos);
+
       _mapboxMap?.flyTo(
         CameraOptions(
           center: Point(coordinates: Position(pos.longitude, pos.latitude)),
