@@ -5,10 +5,26 @@ import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:sakaylive/services/directions_service.dart';
 
+/// Represents a marker to be added to the map.
+class MarkerData {
+  final List<double> coordinates;
+  final String label;
+  final Color textColor;
+
+  MarkerData({
+    required this.coordinates,
+    required this.label,
+    required this.textColor,
+  });
+}
+
 /// Service responsible for drawing routes and markers on the Mapbox map.
 class MapDrawingService {
   MapboxMap? _map;
   PointAnnotationManager? _annotationManager;
+
+  /// Pending markers to be added in batch.
+  final List<MarkerData> _pendingMarkers = [];
 
   bool get isInitialized => _map != null && _annotationManager != null;
 
@@ -136,6 +152,18 @@ class MapDrawingService {
   }
 
   /// Add a labeled marker at coordinates with pill-style background.
+  /// Note: Markers are queued and must be committed with flushMarkers().
+  void queueMarker({
+    required List<double> coordinates,
+    required String label,
+    required Color textColor,
+  }) {
+    _pendingMarkers.add(
+      MarkerData(coordinates: coordinates, label: label, textColor: textColor),
+    );
+  }
+
+  /// Legacy single marker method - immediately adds one marker.
   Future<void> addMarker({
     required List<double> coordinates,
     required String label,
@@ -158,8 +186,35 @@ class MapDrawingService {
     );
   }
 
+  /// Flush all queued markers to the map in a single batch operation.
+  /// This is more efficient than adding markers one by one.
+  Future<void> flushMarkers() async {
+    if (_annotationManager == null || _pendingMarkers.isEmpty) return;
+
+    final options = _pendingMarkers.map((marker) {
+      return PointAnnotationOptions(
+        geometry: Point(
+          coordinates: Position(marker.coordinates[0], marker.coordinates[1]),
+        ),
+        textField: marker.label,
+        textSize: 14.0,
+        textOffset: [0, 0],
+        textColor: marker.textColor.value,
+        textHaloColor: Colors.white.value,
+        textHaloWidth: 3.0,
+        textHaloBlur: 1.0,
+        iconOpacity: 0,
+      );
+    }).toList();
+
+    // Batch create all markers at once
+    await _annotationManager!.createMulti(options);
+    _pendingMarkers.clear();
+  }
+
   /// Clear all markers.
   Future<void> clearMarkers() async {
+    _pendingMarkers.clear();
     await _annotationManager?.deleteAll();
   }
 
