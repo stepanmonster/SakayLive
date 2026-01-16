@@ -14,6 +14,9 @@ class SakayBottomSheet extends StatelessWidget {
   final double bottomPadding;
   final String? selectedRouteNum;
 
+  // 1. ADD THIS LINE: Define the callback parameter
+  final VoidCallback? onRoutesTap;
+
   const SakayBottomSheet({
     super.key,
     required this.scrollController,
@@ -27,6 +30,8 @@ class SakayBottomSheet extends StatelessWidget {
     this.buttonsHeight = 80.0,
     this.bottomPadding = 20.0,
     this.selectedRouteNum,
+    // 2. ADD THIS LINE: Add it to the constructor
+    this.onRoutesTap,
   });
 
   @override
@@ -68,7 +73,10 @@ class SakayBottomSheet extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     _buildSearchBar(),
+
+                    // 3. This builds the buttons row
                     _buildQuickActions(),
+
                     const Divider(
                       thickness: 1,
                       color: Colors.black12,
@@ -115,6 +123,7 @@ class SakayBottomSheet extends StatelessWidget {
               child: TextField(
                 controller: searchController,
                 onTap: onSearchTap,
+                readOnly: true, // Prevent keyboard from opening automatically
                 decoration: const InputDecoration(
                   hintText: "Where to?",
                   border: InputBorder.none,
@@ -140,30 +149,43 @@ class SakayBottomSheet extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _actionIcon(Icons.work, "Work"),
-          _actionIcon(Icons.home, "Home"),
-          _actionIcon(Icons.star, "Saved"),
-          _actionIcon(Icons.history, "Recent"),
+          // 4. CONNECT THE BUTTON HERE
+          _actionIcon(Icons.directions_bus, "Routes", onTap: onRoutesTap),
+
+          _actionIcon(Icons.home, "Home", onTap: () {}),
+          _actionIcon(Icons.star, "Saved", onTap: () {}),
+          _actionIcon(Icons.history, "Recent", onTap: () {}),
         ],
       ),
     );
   }
 
-  Widget _actionIcon(IconData i, String l) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        CircleAvatar(
-          radius: 24,
-          backgroundColor: Colors.white,
-          child: Icon(i, color: Colors.blueGrey),
+  Widget _actionIcon(IconData i, String l, {VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(30),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 24,
+              backgroundColor: Colors.white,
+              // Highlight the Routes button slightly
+              child: Icon(
+                i,
+                color: l == "Routes" ? Colors.orange : Colors.blueGrey,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          l,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -175,6 +197,7 @@ class _RouteTile extends StatelessWidget {
   final bool isSelected;
 
   const _RouteTile({
+    super.key, // Added super.key for best practice
     required this.route,
     required this.onTap,
     required this.onSwap,
@@ -191,17 +214,16 @@ class _RouteTile extends StatelessWidget {
         return Colors.green.shade700;
       case 'red':
         return Colors.red.shade700;
-      case 'grey':
-        return Colors.grey.shade700;
-      default:
+      case 'purple':
         return Colors.purple.shade700;
+      default:
+        return Colors.grey.shade700;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final color = _getRouteColor(route['color']);
-    // Check if this is a ROUTE or a PLACE
     final isPlace = route['type'] == 'place';
 
     return Column(
@@ -223,7 +245,7 @@ class _RouteTile extends StatelessWidget {
           title: Text(
             route['dest'],
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: Column(
@@ -232,26 +254,28 @@ class _RouteTile extends StatelessWidget {
               Text(
                 route['status'],
                 style: TextStyle(color: Colors.grey[700], fontSize: 13),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 2),
-              // Only show direction/swap info if it's a BUS ROUTE
-              if (!isPlace)
-                Row(
-                  children: [
-                    Icon(Icons.swap_calls, size: 14, color: color),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        route['directions'][route['activeDir']]['name'],
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
+              if (!isPlace && route['directions'] != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2.0),
+                  child: Row(
+                    children: [
+                      Icon(Icons.swap_calls, size: 14, color: color),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        // FIX: Added '?? 0' to prevent crash if activeDir is null
+                        child: Text(
+                          route['directions'][route['activeDir'] ?? 0]['name'],
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
             ],
           ),
@@ -268,7 +292,7 @@ class _RouteTile extends StatelessWidget {
                       route['time'],
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                        fontSize: 14,
                       ),
                     ),
                     InkWell(
