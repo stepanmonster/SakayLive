@@ -7,8 +7,13 @@ import 'package:sakaylive/screens/theme.dart'; // Ensure orange/beige defined he
 
 class SearchPage extends StatefulWidget {
   final SearchBoxAPI searchBoxApi;
+  final String sessionToken;
 
-  const SearchPage({super.key, required this.searchBoxApi});
+  const SearchPage({
+    super.key,
+    required this.searchBoxApi,
+    required this.sessionToken,
+  });
 
   @override
   State<SearchPage> createState() => _SearchPageState();
@@ -61,7 +66,10 @@ class _SearchPageState extends State<SearchPage> {
       if (query.length < 3) return;
 
       try {
-        final response = await widget.searchBoxApi.getSuggestions(query);
+        // Use session token for billing efficiency
+        final response = await widget.searchBoxApi.getSuggestions(
+          query,
+        );
         response.fold((success) {
           final formattedApiResults = success.suggestions.map((suggestion) {
             return {
