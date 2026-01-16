@@ -8,6 +8,9 @@ import 'package:sakaylive/data/jeepney_routes.dart';
 import 'package:sakaylive/models/trip_option.dart';
 import 'package:sakaylive/services/route_service.dart';
 import 'package:sakaylive/services/map_drawing_service.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'dart:convert';
 
 /// ViewModel for the Map Screen following MVVM pattern.
 /// Contains all business logic and state management.
@@ -16,6 +19,9 @@ class MapViewModel extends ChangeNotifier {
   final RouteService _routeService = RouteService();
   final MapDrawingService _mapDrawingService = MapDrawingService();
 
+  // --- FIREBASE ---
+  late final FirebaseDatabase _database;
+  
   // --- API ---
   late SearchBoxAPI _searchBoxApi;
   String _sessionToken = const Uuid().v4();
@@ -27,25 +33,26 @@ class MapViewModel extends ChangeNotifier {
   Point? _destinationPoint;
   String? _selectedRouteNum;
   String _searchText = '';
+  List<Map<String, dynamic>> _cachedRoutes = [];  // 🔥 FIREBASE ROUTES
   List<Map<String, dynamic>> _displayList = [];
 
   // --- GETTERS ---
   bool get isInitialized => _isInitialized;
-  bool get isRoutesLoaded => _routeService.isLoaded;
+  bool get isRoutesLoaded => _cachedRoutes.isNotEmpty;  // 🔥 CHANGED
   bool get isFetchingLocation => _isFetchingLocation;
   geo.Position? get userLocation => _userLocation;
   Point? get destinationPoint => _destinationPoint;
   String? get selectedRouteNum => _selectedRouteNum;
   String get searchText => _searchText;
   List<Map<String, dynamic>> get displayList => _displayList;
-  List<Map<String, dynamic>> get localRoutes => localRoutesData;
+  List<Map<String, dynamic>> get localRoutes => _cachedRoutes;  // 🔥 CHANGED
   SearchBoxAPI get searchBoxApi => _searchBoxApi;
   MapDrawingService get mapDrawingService => _mapDrawingService;
   String get sessionToken => _sessionToken;
 
   MapViewModel() {
     _initializeApi();
-    _displayList = List.from(localRoutesData);
+    _displayList = List.from(_cachedRoutes);
   }
 
   void _initializeApi() {
@@ -59,11 +66,67 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
+  /// 🔥 NEW: Initialize Firebase + Load Routes
+  Future<void> initializeFirebase() async {
+    _database = FirebaseDatabase.instanceFor(
+      app: Firebase.app(),
+      databaseURL: 'https://sakaylive-1-default-rtdb.asia-southeast1.firebasedatabase.app'
+    );
+    await loadRoutesFromFirebase();
+  }
+
+  /// 🔥 NEW: Load routes from Firebase
+  Future<void> loadRoutesFromFirebase() async {
+    try {
+      final snapshot = await _database.ref('routes').get();
+      if (snapshot.value == null) return;
+      
+      List<dynamic> rawData = snapshot.value as List<dynamic>;
+      _cachedRoutes = rawData
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+      
+      _displayList = List.from(_cachedRoutes);
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Firebase routes error: $e");
+      // Fallback to local data
+      _cachedRoutes = localRoutesData;
+      _displayList = List.from(_cachedRoutes);
+      notifyListeners();
+    }
+  }
+
+  /// 🔥 NEW: Load GeoJSON from Firebase
+  Future<Map<String, dynamic>?> loadGeoJson(String path) async {
+    try {
+      final snapshot = await _database.ref(path).get();
+      if (snapshot.value == null) return null;
+      return Map<String, dynamic>.from(snapshot.value as Map);
+    } catch (e) {
+      debugPrint("GeoJSON error: $e");
+      return null;
+    }
+  }
+
+  /// 🔥 NEW: Update and select route from RoutesListPage
+  Future<void> updateAndSelectRoute(Map<String, dynamic> selected) async {
+    final route = _cachedRoutes.firstWhere(
+      (r) => r['num'] == selected['num'],
+      orElse: () => selected,
+    );
+    if (selected['activeDir'] != null) {
+      route['activeDir'] = selected['activeDir'];
+    }
+    await selectRoute(route);
+  }
+
   /// Initialize the map and preload routes.
+  @override
   Future<void> initialize(MapboxMap map) async {
     _mapDrawingService.initialize(map);
     await _mapDrawingService.initAnnotationManager();
-    await _routeService.preloadRoutes(localRoutesData);
+    await initializeFirebase();  // 🔥 FIREBASE FIRST
     _isInitialized = true;
     notifyListeners();
   }
@@ -72,8 +135,15 @@ class MapViewModel extends ChangeNotifier {
   void updateSearchText(String text) {
     _searchText = text;
     if (text.isEmpty) {
-      _displayList = List.from(localRoutesData);
+      _displayList = List.from(_cachedRoutes);  // 🔥 CHANGED
       _selectedRouteNum = null;
+    } else {
+      // Filter cached routes
+      _displayList = _cachedRoutes.where((route) {
+        final num = route['num'].toString().toLowerCase();
+        final dest = route['dest'].toString().toLowerCase();
+        return num.contains(text.toLowerCase()) || dest.contains(text.toLowerCase());
+      }).toList();
     }
     notifyListeners();
   }
@@ -108,10 +178,7 @@ class MapViewModel extends ChangeNotifier {
     if (mapboxId == null) return false;
 
     try {
-      // Use session token for billing efficiency
       final response = await _searchBoxApi.getPlace(mapboxId);
-
-      // Reset session token after retrieve (ends the session)
       _sessionToken = const Uuid().v4();
 
       bool success = false;
@@ -178,7 +245,7 @@ class MapViewModel extends ChangeNotifier {
 
         // Draw Bus Path
         await _mapDrawingService.drawPolyline(
-          coordinates: leg['coords'] as List<List<double>>,
+         coordinates: leg['coords'] as List<List<double>>,
           startIndex: leg['pickupIndex'],
           endIndex: leg['dropoffIndex'],
           colorName: leg['route']['color'],
@@ -246,7 +313,7 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
-  /// Select and display a specific route.
+  /// 🔥 UPDATED: Select route with Firebase GeoJSON
   Future<void> selectRoute(Map<String, dynamic> route) async {
     _selectedRouteNum = route['num'];
     _destinationPoint = null;
@@ -255,20 +322,35 @@ class MapViewModel extends ChangeNotifier {
     await _mapDrawingService.clearNavigationLayers();
     await _mapDrawingService.clearMarkers();
 
-    int dir = route['activeDir'] ?? 0;
-    String asset = route['directions'][dir]['asset'];
-
-    await _mapDrawingService.drawRouteFromAsset(
-      assetPath: asset,
-      colorName: route['color'],
-    );
+    try {
+      int dir = route['activeDir'] ?? 0;
+      String dbPath = route['directions'][dir]['path'];  // 🔥 PATH not asset
+      
+      final geoJsonData = await loadGeoJson(dbPath);
+      if (geoJsonData != null) {
+        await _mapDrawingService.drawGeoJsonRoute(
+          geoJsonData: geoJsonData,
+          colorName: route['color'],
+        );
+      }
+    } catch (e) {
+      debugPrint("Select route error: $e");
+    }
 
     _mapDrawingService.flyTo(lat: 10.7202, lng: 122.5644, zoom: 13.0);
   }
 
   /// Swap route direction.
   void swapRouteDirection(Map<String, dynamic> route) {
-    route['activeDir'] = (route['activeDir'] + 1) % 2;
+    int currentDir = route['activeDir'] ?? 0;
+    route['activeDir'] = (currentDir + 1) % route['directions'].length;
+    
+    // Update cached route too
+    final cachedIndex = _cachedRoutes.indexWhere((r) => r['num'] == route['num']);
+    if (cachedIndex != -1) {
+      _cachedRoutes[cachedIndex]['activeDir'] = route['activeDir'];
+    }
+    
     notifyListeners();
   }
 
@@ -277,7 +359,7 @@ class MapViewModel extends ChangeNotifier {
     _searchText = '';
     _selectedRouteNum = null;
     _destinationPoint = null;
-    _displayList = List.from(localRoutesData);
+    _displayList = List.from(_cachedRoutes);  // 🔥 CHANGED
 
     await _mapDrawingService.clearNavigationLayers();
     await _mapDrawingService.clearMarkers();

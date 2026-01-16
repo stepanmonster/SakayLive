@@ -204,6 +204,41 @@ class MapDrawingService {
     );
   }
 
+  Future<void> drawGeoJsonRoute({
+    required Map<String, dynamic> geoJsonData,
+    required String colorName,
+  }) async {
+    if (_map == null) return;
+    
+    final style = _map!.style;
+    if (await style.styleSourceExists("route-source")) {
+      await style.removeStyleLayer("route-layer");
+      await style.removeStyleSource("route-source");
+    }
+    
+    await style.addSource(GeoJsonSource(id: "route-source", data: json.encode(geoJsonData)));
+    await style.addLayer(LineLayer(
+      id: "route-layer",
+      sourceId: "route-source",
+      lineColor: _getRouteColor(colorName).value,
+      lineWidth: 5.0,
+      lineCap: LineCap.ROUND,
+      lineJoin: LineJoin.ROUND,
+      lineOpacity: 0.8,
+    ));
+  }
+
+    Color _getRouteColor(String colorName) {
+    switch (colorName.toLowerCase()) {
+      case 'blue': return Colors.blue;
+      case 'orange': return Colors.orange;
+      case 'green': return Colors.green;
+      case 'red': return Colors.red;
+      case 'purple': return Colors.purple;
+      default: return Colors.blue;
+    }
+  }
+
   /// Fly camera to show both user and destination.
   void fitCameraToTrip({
     required double userLat,
@@ -223,22 +258,5 @@ class MapDrawingService {
       ),
       MapAnimationOptions(duration: 1500),
     );
-  }
-
-  Color _getRouteColor(String colorName) {
-    switch (colorName) {
-      case 'blue':
-        return Colors.blue.shade700;
-      case 'orange':
-        return Colors.orange.shade700;
-      case 'green':
-        return Colors.green.shade700;
-      case 'red':
-        return Colors.red.shade700;
-      case 'grey':
-        return Colors.grey.shade700;
-      default:
-        return Colors.purple.shade700;
-    }
   }
 }

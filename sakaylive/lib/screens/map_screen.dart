@@ -7,6 +7,8 @@ import 'package:sakaylive/screens/search_page.dart';
 import 'package:sakaylive/screens/theme.dart';
 import 'package:sakaylive/viewmodels/map_view_model.dart';
 import 'package:sakaylive/widgets/sakay_bottom_sheet.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 /// Map Screen - View layer following MVVM pattern.
 /// Only responsible for UI rendering and user interaction forwarding.
@@ -22,6 +24,8 @@ class _MapScreenState extends State<MapScreen> {
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
   final TextEditingController _searchController = TextEditingController();
+  late final FirebaseDatabase _database;
+  List<Map<String, dynamic>> _cachedRoutes = [];
 
   @override
   void dispose() {
