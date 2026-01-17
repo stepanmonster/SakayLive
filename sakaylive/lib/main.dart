@@ -6,25 +6,37 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'firebase_options.dart';
 import './screens/app.dart';
+import 'screens/landing_page3.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // UI overlays
+
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     systemNavigationBarColor: Colors.transparent,
     statusBarColor: Colors.transparent,
   ));
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  // Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Environment + Mapbox
   await dotenv.load(fileName: ".env");
-  MapboxOptions.setAccessToken(dotenv.get('MAPBOX_ACCESS_TOKEN', fallback: ''));
+  MapboxOptions.setAccessToken(
+    dotenv.get('MAPBOX_ACCESS_TOKEN', fallback: ''),
+  );
 
-  runApp(const App());
+  runApp(const MyRootApp());
+}
+
+class MyRootApp extends StatelessWidget {
+  const MyRootApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: LandingPage3(), // always start on landing page
+    );
+  }
 }
