@@ -28,8 +28,14 @@ class _MapScreenState extends State<MapScreen> {
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
   final TextEditingController _searchController = TextEditingController();
-  late final FirebaseDatabase _database;
   List<Map<String, dynamic>> _cachedRoutes = [];
+
+  @override
+  void initState() {
+    super.initState();
+    // You might want to initialize Firebase here if needed
+    // But Firebase initialization should typically be in main.dart
+  }
 
   @override
   void dispose() {
@@ -90,7 +96,7 @@ class _MapScreenState extends State<MapScreen> {
       MaterialPageRoute(builder: (_) => const RoutesListPage()),
     );
 
-    if (selected != null) {
+    if (selected != null && selected is Map<String, dynamic>) {
       final route = viewModel.localRoutes.firstWhere(
         (r) => r['num'] == selected['num'],
         orElse: () => selected,
@@ -179,47 +185,6 @@ class _MapScreenState extends State<MapScreen> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
 
-      drawer: Drawer(
-        backgroundColor: beige,
-        child: SafeArea(
-          child: Column(
-            children: [
-              Container(
-                height: 120,
-                width: double.infinity,
-                padding: const EdgeInsets.all(20.0),
-                child: Image.asset(
-                  'assets/images/sakaylive_logo.png',
-                  height: 80,
-                  width: 200,
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.payment),
-                      title: const Text("Transit Passes"),
-                      onTap: () {},
-                    ),
-
-                    // ✅ OPTIONAL: Also add Conductor access in drawer
-                    ListTile(
-                      leading: const Icon(Icons.badge),
-                      title: const Text("Conductor Panel"),
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ConductorDashboard(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
       drawer: _buildDrawer(),
       body: Stack(
         children: [
@@ -318,15 +283,37 @@ class _MapScreenState extends State<MapScreen> {
           children: [
             Container(
               height: 120,
-              padding: const EdgeInsets.all(20),
-              child: Image.asset('assets/images/sakaylive_logo.png'),
+              width: double.infinity,
+              padding: const EdgeInsets.all(20.0),
+              child: Image.asset(
+                'assets/images/sakaylive_logo.png',
+                height: 80,
+                width: 200,
+              ),
             ),
             Expanded(
               child: ListView(
+                padding: EdgeInsets.zero,
                 children: [
                   ListTile(
                     leading: const Icon(Icons.payment),
                     title: const Text("Transit Passes"),
+                    onTap: () {
+                      // Add functionality here
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.badge),
+                    title: const Text("Conductor Panel"),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ConductorDashboard(),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
