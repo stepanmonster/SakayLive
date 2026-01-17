@@ -29,8 +29,9 @@ class CustomGestureDetector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      behavior: HitTestBehavior
-          .translucent, // Ensures it catches swipes on empty space
+      behavior: HitTestBehavior.translucent,
+      onPanStart: (_) {}, // Start tracking
+      onPanUpdate: (_) {}, // Allow dragging
       onPanEnd: (details) {
         final velocity = details.velocity.pixelsPerSecond;
 
