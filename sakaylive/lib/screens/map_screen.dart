@@ -171,19 +171,6 @@ class _MapScreenState extends State<MapScreen> {
       resizeToAvoidBottomInset: false,
       extendBody: true,
 
-      // ✅ TEMP DEBUG ACCESS (remove later when login routes here)
-      floatingActionButton: FloatingActionButton(
-        heroTag: "conductor_fab",
-        backgroundColor: Colors.black,
-        child: const Icon(Icons.admin_panel_settings, color: Colors.white),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const ConductorDashboard()),
-          );
-        },
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
 
       drawer: _buildDrawer(),
       body: Stack(
@@ -229,7 +216,35 @@ class _MapScreenState extends State<MapScreen> {
               onPressed: viewModel.fetchUserLocation,
             ),
           ),
-
+                // ✅ ADDED: Conductor FAB positioned above search bar
+        Positioned(
+          right: 16,
+          bottom: (screenHeight * minSize) + 30, // Adjust this value to position above the search bar
+          child: Container(
+            height: 56,
+            width: 56,
+            decoration: BoxDecoration(
+              color: Colors.black,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(1.0),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.admin_panel_settings, color: Colors.white, size: 24),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ConductorDashboard()),
+                );
+              },
+            ),
+          ),
+        ),
           // Bottom Sheet
           DraggableScrollableSheet(
             controller: _sheetController,
