@@ -229,14 +229,19 @@ class MapViewModel extends ChangeNotifier {
 
       // === STEP 1: Draw all lines first (so markers appear on top) ===
 
-      // Walk from User to First Boarding
+      // Collect all draw operations
+      final List<Future<void>> drawOperations = [];
       var firstLeg = legs[0];
-      await _mapDrawingService.drawWalkLine(
-        startLat: _userLocation!.latitude,
-        startLng: _userLocation!.longitude,
-        endLat: firstLeg['pickup'][1],
-        endLng: firstLeg['pickup'][0],
-        layerId: "walk-start",
+
+      // Walk from User to First Boarding
+      drawOperations.add(
+        _mapDrawingService.drawWalkLine(
+          startLat: _userLocation!.latitude,
+          startLng: _userLocation!.longitude,
+          endLat: firstLeg['pickup'][1],
+          endLng: firstLeg['pickup'][0],
+          layerId: "walk-start",
+        ),
       );
 
       // Draw all bus paths and transfer walks
@@ -244,41 +249,51 @@ class MapViewModel extends ChangeNotifier {
         var leg = legs[i];
 
         // Draw Bus Path
-        await _mapDrawingService.drawPolyline(
-         coordinates: leg['coords'] as List<List<double>>,
-          startIndex: leg['pickupIndex'],
-          endIndex: leg['dropoffIndex'],
-          colorName: leg['route']['color'],
-          layerId: "bus-leg-$i",
+        drawOperations.add(
+          _mapDrawingService.drawPolyline(
+            coordinates: leg['coords'] as List<List<double>>,
+            startIndex: leg['pickupIndex'],
+            endIndex: leg['dropoffIndex'],
+            colorName: leg['route']['color'],
+            layerId: "bus-leg-$i",
+          ),
         );
 
         // Transfer walk lines
         if (i < legs.length - 1) {
           var next = legs[i + 1];
-          await _mapDrawingService.drawWalkLine(
-            startLat: leg['dropoff'][1],
-            startLng: leg['dropoff'][0],
-            endLat: next['pickup'][1],
-            endLng: next['pickup'][0],
-            layerId: "walk-transfer-$i",
+          drawOperations.add(
+            _mapDrawingService.drawWalkLine(
+              startLat: leg['dropoff'][1],
+              startLng: leg['dropoff'][0],
+              endLat: next['pickup'][1],
+              endLng: next['pickup'][0],
+              layerId: "walk-transfer-$i",
+            ),
           );
         }
       }
 
       // Walk to Destination
       var lastLeg = legs.last;
-      await _mapDrawingService.drawWalkLine(
-        startLat: lastLeg['dropoff'][1],
-        startLng: lastLeg['dropoff'][0],
-        endLat: dest.lat.toDouble(),
-        endLng: dest.lng.toDouble(),
-        layerId: "walk-end",
+      drawOperations.add(
+        _mapDrawingService.drawWalkLine(
+          startLat: lastLeg['dropoff'][1],
+          startLng: lastLeg['dropoff'][0],
+          endLat: dest.lat.toDouble(),
+          endLng: dest.lng.toDouble(),
+          layerId: "walk-end",
+        ),
       );
 
+      // Execute all draw operations in parallel for faster rendering
+      await Future.wait(drawOperations);
+
       // === STEP 2: Draw all markers AFTER lines (so they appear on top) ===
+      // Queue markers for batch creation (more efficient than individual creates)
 
       // Board marker
-      await _mapDrawingService.addMarker(
+      _mapDrawingService.queueMarker(
         coordinates: firstLeg['pickup'],
         label: "● Board here",
         textColor: Colors.blue.shade700,
@@ -288,7 +303,7 @@ class MapViewModel extends ChangeNotifier {
       for (int i = 0; i < legs.length - 1; i++) {
         var leg = legs[i];
         var next = legs[i + 1];
-        await _mapDrawingService.addMarker(
+        _mapDrawingService.queueMarker(
           coordinates: leg['dropoff'],
           label: "↔ Transfer to ${next['route']['num']}",
           textColor: Colors.orange.shade700,
@@ -296,11 +311,14 @@ class MapViewModel extends ChangeNotifier {
       }
 
       // Destination marker
-      await _mapDrawingService.addMarker(
+      _mapDrawingService.queueMarker(
         coordinates: [dest.lng.toDouble(), dest.lat.toDouble()],
         label: "◉ Destination",
         textColor: Colors.red.shade700,
       );
+
+      // Flush all markers in one batch
+      await _mapDrawingService.flushMarkers();
 
       _mapDrawingService.fitCameraToTrip(
         userLat: _userLocation!.latitude,
