@@ -19,6 +19,7 @@ dependencies:
   firebase_database: ^12.1.1
   flutter_dotenv: ^6.0.0
   geolocator: ^14.0.2
+  shared_preferences: ^2.2.2
   mapbox_search: ^4.4.0
   http: ^1.6.0
   uuid: ^4.5.2
