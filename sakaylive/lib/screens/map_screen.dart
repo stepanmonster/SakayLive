@@ -24,8 +24,6 @@ class _MapScreenState extends State<MapScreen> {
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
   final TextEditingController _searchController = TextEditingController();
-  late final FirebaseDatabase _database;
-  List<Map<String, dynamic>> _cachedRoutes = [];
 
   @override
   void dispose() {
@@ -87,14 +85,8 @@ class _MapScreenState extends State<MapScreen> {
     );
 
     if (selected != null) {
-      final route = viewModel.localRoutes.firstWhere(
-        (r) => r['num'] == selected['num'],
-        orElse: () => selected,
-      );
-      if (selected['activeDir'] != null) {
-        route['activeDir'] = selected['activeDir'];
-      }
-      viewModel.selectRoute(route);
+      // ✅ FIXED - Use viewModel method instead of localRoutes
+      await viewModel.updateAndSelectRoute(selected);
       _sheetController.animateTo(
         0.18,
         duration: const Duration(milliseconds: 300),
@@ -269,7 +261,7 @@ class _MapScreenState extends State<MapScreen> {
                     title: const Text("Transit Passes"),
                   ),
                 ],
-              ),
+              ), // ✅ THIS was missing in your code
             ),
             ListTile(
               leading: const Icon(Icons.person),
@@ -284,6 +276,7 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
   }
+
 
   Widget _circularIconButton(IconData icon, {VoidCallback? onPressed}) {
     return Container(
