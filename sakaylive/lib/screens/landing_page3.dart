@@ -10,14 +10,9 @@ import 'package:sakaylive/screens/login_page.dart';
 class LandingPage3 extends StatelessWidget {
   const LandingPage3({super.key});
 
-  void _goToApp(BuildContext context, String role) {
-    if (role == 'commuter') {
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const App()));
-    } else {
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => LoginPage()));
-    }
+  void _goToApp(BuildContext context, String routeName) {
+    Navigator.pushNamed(context, routeName);
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -60,7 +55,7 @@ class LandingPage3 extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () => _goToApp(context, 'commuter'),
+                  onPressed: () => _goToApp(context, '/map'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: tan,
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -96,7 +91,7 @@ class LandingPage3 extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
-                  onPressed: () => _goToApp(context, 'conductor'),
+                  onPressed: () => _goToApp(context, '/login'),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: kDarkNavy, width: 2),
                     padding: const EdgeInsets.symmetric(vertical: 16),

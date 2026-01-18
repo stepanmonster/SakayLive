@@ -8,6 +8,8 @@ class AuthViewModel extends ChangeNotifier {
   bool? _isConductor;
   bool _isLoading = false;
 
+  late final AuthService authService;
+
   User? get user => _user;
   bool get isLoggedIn => _user != null;
   bool? get isConductor => _isConductor;
@@ -15,6 +17,7 @@ class AuthViewModel extends ChangeNotifier {
 
   AuthViewModel() {
     print('🔍 AuthViewModel: Constructor called');
+    authService = _authService;
     _initAuthListener();
   }
 
