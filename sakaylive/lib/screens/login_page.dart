@@ -3,6 +3,7 @@ import 'theme.dart';
 import 'signup_page.dart';
 import '../services/auth_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:sakaylive/screens/landing_page3.dart';
 
 
 class LoginPage extends StatefulWidget {
@@ -40,9 +41,13 @@ class _LoginPageState extends State<LoginPage> {
         _passwordController.text.trim(),
       );
 
-      // Success - navigate back to landing page
+      // ✅ FIXED - Go to landing page, NOT popUntil (which closes app)
       if (mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        Navigator.pushNamedAndRemoveUntil(
+          context, 
+          '/map', 
+          (route) => false,  // Remove ALL previous routes
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Logged in successfully!'),
@@ -54,9 +59,7 @@ class _LoginPageState extends State<LoginPage> {
       _showError(_getErrorMessage(e.toString()));
     } finally {
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -148,9 +151,19 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
+ @override
+Widget build(BuildContext context) {
+    return WillPopScope(  // Use WillPopScope for maximum compatibility
+    onWillPop: () async {
+      // Check if this is the root route (LandingPage3 -> LoginPage)
+      final canPop = Navigator.of(context).canPop();
+      if (canPop) {
+        Navigator.pop(context);  // Go back to previous screen
+        return false;
+      }
+      return true;  // Allow app to close only if somehow at true root
+    },// Allow normal popping back to previous screen
+    child: Scaffold(
       backgroundColor: beige,
       body: SafeArea(
         child: SingleChildScrollView(
@@ -220,7 +233,6 @@ class _LoginPageState extends State<LoginPage> {
                               filled: true,
                               fillColor: Colors.white,
                               hintText: 'Enter email',
-                              hintStyle: TextStyle(fontWeight: FontWeight.w100),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
@@ -330,6 +342,7 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

@@ -11,6 +11,7 @@ import 'package:sakaylive/services/map_drawing_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:convert';
+import 'package:sakaylive/services/auth_service.dart';
 
 /// ViewModel for the Map Screen following MVVM pattern.
 /// Contains all business logic and state management.
@@ -18,6 +19,7 @@ class MapViewModel extends ChangeNotifier {
   // --- SERVICES ---
   final RouteService _routeService = RouteService();
   final MapDrawingService _mapDrawingService = MapDrawingService();
+  MapboxMap? _map;
 
   // --- FIREBASE ---
   late final FirebaseDatabase _database;
@@ -97,38 +99,58 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
-  /// 🔥 NEW: Load GeoJSON from Firebase
-  Future<Map<String, dynamic>?> loadGeoJson(String path) async {
-    try {
-      final snapshot = await _database.ref(path).get();
-      if (snapshot.value == null) return null;
-      return Map<String, dynamic>.from(snapshot.value as Map);
-    } catch (e) {
-      debugPrint("GeoJSON error: $e");
-      return null;
-    }
-  }
 
-  /// 🔥 NEW: Update and select route from RoutesListPage
-  Future<void> updateAndSelectRoute(Map<String, dynamic> selected) async {
-    final route = _cachedRoutes.firstWhere(
-      (r) => r['num'] == selected['num'],
-      orElse: () => selected,
-    );
-    if (selected['activeDir'] != null) {
-      route['activeDir'] = selected['activeDir'];
+/// 🔥 FIXED: Handle both Map and String from Firebase
+Future<Map<String, dynamic>?> loadGeoJson(String path) async {
+  try {
+    final parentSnap = await _database.ref(path).get();
+    if (parentSnap.value == null) return null;
+    
+    final Map<String, dynamic> geoJson = {
+      'type': parentSnap.child('type').value ?? 'FeatureCollection',
+      'features': <Map<String, dynamic>>[],
+    };
+    
+    // 🔥 FIX: Handle List<Object?> from features
+    final featuresSnap = await _database.ref('$path/features').get();
+    if (featuresSnap.value != null) {
+      List<dynamic> featuresList = featuresSnap.value as List<dynamic>;
+      
+      for (var featureRaw in featuresList) {
+        if (featureRaw is Map) {
+          geoJson['features'].add(Map<String, dynamic>.from(featureRaw));
+        }
+      }
     }
-    await selectRoute(route);
+    
+    debugPrint("✅ GeoJSON loaded: ${geoJson['features'].length} features");
+    return geoJson;
+  } catch (e) {
+    debugPrint("GeoJSON error: $e");
+    return null;
   }
-
+}
   /// Initialize the map and preload routes.
-  @override
+
   Future<void> initialize(MapboxMap map) async {
+    _map = map;
     _mapDrawingService.initialize(map);
     await _mapDrawingService.initAnnotationManager();
     await initializeFirebase();  // 🔥 FIREBASE FIRST
     _isInitialized = true;
     notifyListeners();
+  }
+
+  Future<void> _safeDraw(Future<void> Function() drawFn) async {
+    if (_map == null || !_isInitialized) {
+      debugPrint("❌ Map not ready for drawing");
+      return;
+    }
+    try {
+      await drawFn();
+    } catch (e) {
+      debugPrint("Draw failed: $e");
+    }
   }
 
   /// Update the search text and reset display if empty.
@@ -358,19 +380,19 @@ class MapViewModel extends ChangeNotifier {
     _mapDrawingService.flyTo(lat: 10.7202, lng: 122.5644, zoom: 13.0);
   }
 
-  /// Swap route direction.
-  void swapRouteDirection(Map<String, dynamic> route) {
-    int currentDir = route['activeDir'] ?? 0;
-    route['activeDir'] = (currentDir + 1) % route['directions'].length;
-    
-    // Update cached route too
-    final cachedIndex = _cachedRoutes.indexWhere((r) => r['num'] == route['num']);
-    if (cachedIndex != -1) {
-      _cachedRoutes[cachedIndex]['activeDir'] = route['activeDir'];
+    /// Swap route direction.
+    void swapRouteDirection(Map<String, dynamic> route) {
+      int currentDir = route['activeDir'] ?? 0;
+      route['activeDir'] = (currentDir + 1) % route['directions'].length;
+      
+      // Update cached route too
+      final cachedIndex = _cachedRoutes.indexWhere((r) => r['num'] == route['num']);
+      if (cachedIndex != -1) {
+        _cachedRoutes[cachedIndex]['activeDir'] = route['activeDir'];
+      }
+      
+      notifyListeners();
     }
-    
-    notifyListeners();
-  }
 
   /// Clear all selections and reset to default state.
   Future<void> clearSelection() async {

@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'theme.dart';
-import 'app.dart';
+import '../services/auth_service.dart';
+import '../viewmodels/auth_view_model.dart';
+import 'app.dart'; 
+import 'package:sakaylive/screens/login_page.dart';
 
 class LandingPage3 extends StatelessWidget {
   const LandingPage3({super.key});
 
-  void _goToApp(BuildContext context) {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const App()),
-    );
+  void _goToApp(BuildContext context, String routeName) {
+    Navigator.pushNamed(context, routeName);
   }
 
   @override
@@ -46,13 +49,13 @@ class LandingPage3 extends StatelessWidget {
                 ),
               ),
 
-              // Buttons section – slightly above bottom
+              // Buttons section
               const SizedBox(height: 8),
 
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () => _goToApp(context),
+                  onPressed: () => _goToApp(context, '/map'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: tan,
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -88,7 +91,7 @@ class LandingPage3 extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
-                  onPressed: () => _goToApp(context),
+                  onPressed: () => _goToApp(context, '/login'),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: kDarkNavy, width: 2),
                     padding: const EdgeInsets.symmetric(vertical: 16),
