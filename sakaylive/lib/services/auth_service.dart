@@ -17,16 +17,50 @@ class AuthService {
 
   Future<bool> isEmailRegisteredInAppDb(String email) async {
     final snap = await _db.child('userEmails').child(_emailKey(email)).get();
-    return snap.exists && snap.value != null; // one-time existence check
+    return snap.exists && snap.value != null;
   }
 
-  // call this in signUpWithEmail after writing /users/{uid}
   Future<void> indexEmailForLookup(String email, String uid) async {
     await _db.child('userEmails').child(_emailKey(email)).set(uid);
   }
 
-  // Sign up with email & password
-  Future<User?> signUpWithEmail(String email, String password, String username) async {
+  // Add this PUBLIC method to AuthService
+  Future<DataSnapshot> getRouteData(String path) async {
+    final snapshot = await _db.child(path).get();
+    return snapshot;
+  }
+
+  // ✅ NEW: Check if user is conductor (custom claims first, then RTDB)
+  Future<bool> isConductor() async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+
+    try {
+      // Try custom claims first (most secure)
+      final idTokenResult = await user.getIdTokenResult(true);
+      if (idTokenResult.claims?['conductor'] == true) {
+        return true;
+      }
+    } catch (e) {
+      print('Error reading custom claims: $e');
+    }
+
+    // Fallback to RTDB role
+    try {
+      final userSnap = await _db.child('users').child(user.uid).child('isConductor').get();
+      return userSnap.value == true;
+    } catch (e) {
+      print('Error reading RTDB role: $e');
+      return false;
+    }
+  }
+
+  Future<User?> signUpWithEmail(
+    String email,
+    String password,
+    String username, {
+    bool isConductor = false,
+  }) async {
     try {
       UserCredential result = await _auth.createUserWithEmailAndPassword(
         email: email.trim(),
@@ -35,7 +69,6 @@ class AuthService {
       
       User? user = result.user;
       
-      // Store user data in Realtime Database
       if (user != null) {
         final normalizedEmail = email.trim().toLowerCase();
 
@@ -43,7 +76,8 @@ class AuthService {
           'userId': user.uid,
           'username': username,
           'email': normalizedEmail,
-          'role': 'user',
+          'role': isConductor ? 'conductor' : 'user',
+          'isConductor': isConductor,  // ✅ Boolean for RTDB rules
           'createdAt': DateTime.now().millisecondsSinceEpoch,
         });
 
@@ -57,7 +91,6 @@ class AuthService {
     }
   }
 
-  // Sign in with email & password
   Future<User?> signInWithEmail(String email, String password) async {
     try {
       UserCredential result = await _auth.signInWithEmailAndPassword(
@@ -71,12 +104,10 @@ class AuthService {
     }
   }
 
-  // Sign out
   Future<void> signOut() async {
     await _auth.signOut();
   }
 
-  // Reset password
   Future<void> resetPassword(String email) async {
     try {
       await _auth.sendPasswordResetEmail(email: email.trim());

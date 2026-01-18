@@ -16,6 +16,7 @@ class _SignUpPageState extends State<SignUpPage> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
+  bool _isConductor = false;
 
   Future<void> _handleSignUp() async {
     // Validate inputs
@@ -53,6 +54,7 @@ class _SignUpPageState extends State<SignUpPage> {
         _emailController.text.trim(),
         _passwordController.text.trim(),
         _nameController.text.trim(),
+        isConductor: _isConductor,
       );
 
       // Success - navigate back to landing page
@@ -189,6 +191,26 @@ class _SignUpPageState extends State<SignUpPage> {
                             hint: 'Enter email',
                             keyboardType: TextInputType.emailAddress,
                             controller: _emailController,
+                          ),
+                          CheckboxListTile(
+                            title: const Text(
+                              'Register as Conductor (Admin approval required)',
+                              style: TextStyle(
+                                color: kDarkNavy,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 14,
+                              ),
+                            ),
+                            value: _isConductor,
+                            onChanged: _isLoading
+                                ? null
+                                : (value) {
+                                    setState(() {
+                                      _isConductor = value ?? false;
+                                    });
+                                  },
+                            controlAffinity: ListTileControlAffinity.leading,
+                            activeColor: tan,
                           ),
                           const SizedBox(height: 16),
                           const Text(

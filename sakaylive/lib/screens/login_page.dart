@@ -220,7 +220,6 @@ class _LoginPageState extends State<LoginPage> {
                               filled: true,
                               fillColor: Colors.white,
                               hintText: 'Enter email',
-                              hintStyle: TextStyle(fontWeight: FontWeight.w100),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,

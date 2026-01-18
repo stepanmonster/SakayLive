@@ -13,6 +13,8 @@ import 'package:sakaylive/viewmodels/map_view_model.dart';
 import 'package:sakaylive/widgets/sakay_bottom_sheet.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:sakaylive/services/auth_service.dart';
+import 'package:sakaylive/viewmodels/auth_view_model.dart';
 
 /// Map Screen - View layer following MVVM pattern.
 /// Only responsible for UI rendering and user interaction forwarding.
@@ -44,19 +46,16 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
-  void _onMapCreated(MapboxMap map, MapViewModel viewModel) {
-    map.location.updateSettings(
-      LocationComponentSettings(enabled: true, pulsingEnabled: true),
-    );
+  void _onMapCreated(MapboxMap map, MapViewModel viewModel) async {
+    map.location.updateSettings(LocationComponentSettings(enabled: true, pulsingEnabled: true));
     map.logo.updateSettings(LogoSettings(marginBottom: 150, marginLeft: 16));
-    map.attribution.updateSettings(
-      AttributionSettings(marginBottom: 150, marginLeft: 100),
-    );
+    map.attribution.updateSettings(AttributionSettings(marginBottom: 150, marginLeft: 100));
 
-    viewModel.initialize(map).then((_) {
-      viewModel.fetchUserLocation();
-    });
+    await viewModel.initialize(map);  // Wait for completion
+    print("✅ MapViewModel fully initialized");  // Debug
+    viewModel.fetchUserLocation();
   }
+
 
   void _openSearchPage(MapViewModel viewModel) async {
     final result = await Navigator.push(
@@ -142,19 +141,20 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  @override
+ @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => MapViewModel(),
-      child: Consumer<MapViewModel>(
-        builder: (context, viewModel, _) {
-          return _buildScreen(context, viewModel);
-        },
-      ),
-    );
-  }
+    // Use Provider.of (NO Consumer rebuilds)
+    final mapVM = Provider.of<MapViewModel>(context);
+    final authVM = Provider.of<AuthViewModel>(context);
+    
+    // Calculate conductor status ONCE per build
+    final bool showConductorUI = authVM.isLoggedIn && (authVM.isConductor == true);
+    
+    return _buildScreen(context, mapVM, showConductorUI);
+}
 
-  Widget _buildScreen(BuildContext context, MapViewModel viewModel) {
+
+  Widget _buildScreen(BuildContext context, MapViewModel viewModel, bool isConductor) {
     final double bottomPadding = MediaQuery.of(context).padding.bottom;
     final double screenHeight = MediaQuery.of(context).size.height;
 
@@ -170,12 +170,10 @@ class _MapScreenState extends State<MapScreen> {
       key: _scaffoldKey,
       resizeToAvoidBottomInset: false,
       extendBody: true,
-
-
-      drawer: _buildDrawer(),
+      drawer: _buildDrawer(isConductor), // ✅ Role-aware drawer
       body: Stack(
         children: [
-          // Map Layer
+          // Map Layer - UNCHANGED
           Positioned.fill(
             child: MapWidget(
               key: const ValueKey("mapbox_main"),
@@ -190,7 +188,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
 
-          // Menu Button
+          // Menu Button - UNCHANGED
           Positioned(
             top: 0,
             left: 0,
@@ -205,7 +203,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
 
-          // Location Button
+          // Location Button - UNCHANGED
           Positioned(
             right: 16,
             bottom: (screenHeight * midSize) + 20,
@@ -216,36 +214,42 @@ class _MapScreenState extends State<MapScreen> {
               onPressed: viewModel.fetchUserLocation,
             ),
           ),
-                // ✅ ADDED: Conductor FAB positioned above search bar
-        Positioned(
-          right: 16,
-          bottom: (screenHeight * minSize) + 30, // Adjust this value to position above the search bar
-          child: Container(
-            height: 56,
-            width: 56,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(1.0),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
+
+          // ✅ CONDUCTOR FAB - ONLY FOR CONDUCTORS
+          if (isConductor)
+            Positioned(
+              right: 16,
+              bottom: (screenHeight * minSize) + 30,
+              child: Container(
+                height: 56,
+                width: 56,
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(1.0),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-              ],
+                child: IconButton(
+                  icon: const Icon(Icons.admin_panel_settings, 
+                                color: Colors.white, size: 24),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ConductorDashboard(),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ),
-            child: IconButton(
-              icon: const Icon(Icons.admin_panel_settings, color: Colors.white, size: 24),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ConductorDashboard()),
-                );
-              },
-            ),
-          ),
-        ),
-          // Bottom Sheet
+
+          // Bottom Sheet - UNCHANGED
           DraggableScrollableSheet(
             controller: _sheetController,
             initialChildSize: minSize,
@@ -290,7 +294,37 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _buildDrawer() {
+
+  Widget _buildDrawer(bool isConductor) {  // ✅ Takes isConductor parameter
+    final drawerItems = <Widget>[
+      ListTile(
+        leading: const Icon(Icons.payment),
+        title: const Text("Transit Passes"),
+        onTap: () {
+          // Add functionality here
+        },
+      ),
+    ];
+
+    // ✅ ONLY conductors see this item
+    if (isConductor) {
+      drawerItems.add(
+        ListTile(
+          leading: const Icon(Icons.badge),
+          title: const Text("Conductor Panel"),
+          onTap: () {
+            Navigator.pop(context);
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ConductorDashboard(),
+              ),
+            );
+          },
+        ),
+      );
+    }
+
     return Drawer(
       backgroundColor: beige,
       child: SafeArea(
@@ -309,28 +343,7 @@ class _MapScreenState extends State<MapScreen> {
             Expanded(
               child: ListView(
                 padding: EdgeInsets.zero,
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.payment),
-                    title: const Text("Transit Passes"),
-                    onTap: () {
-                      // Add functionality here
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.badge),
-                    title: const Text("Conductor Panel"),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ConductorDashboard(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
+                children: drawerItems,  // ✅ Dynamic list
               ),
             ),
             ListTile(
@@ -346,6 +359,7 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
   }
+
 
   Widget _circularIconButton(IconData icon, {VoidCallback? onPressed}) {
     return Container(
