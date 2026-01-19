@@ -6,18 +6,21 @@ class AuthViewModel extends ChangeNotifier {
   final AuthService _authService = AuthService();
   User? _user;
   bool? _isConductor;
+  bool? _isAdmin;        // ✅ ADDED
   bool _isLoading = false;
 
+  // ✅ KEEP your required public exposure
   late final AuthService authService;
 
   User? get user => _user;
   bool get isLoggedIn => _user != null;
   bool? get isConductor => _isConductor;
+  bool? get isAdmin => _isAdmin;     // ✅ ADDED
   bool get isLoading => _isLoading;
 
   AuthViewModel() {
     print('🔍 AuthViewModel: Constructor called');
-    authService = _authService;
+    authService = _authService;  // ✅ Proper initialization
     _initAuthListener();
   }
 
@@ -31,28 +34,31 @@ class AuthViewModel extends ChangeNotifier {
         _checkRole();
       } else {
         _isConductor = null;
+        _isAdmin = null;       // ✅ ADDED
         _isLoading = false;
-        notifyListeners(); // ✅ Only called ONCE here
+        notifyListeners();
       }
     });
   }
 
   Future<void> _checkRole() async {
-    if (_isLoading) return; // Prevent duplicate calls
+    if (_isLoading) return;
     
     _isLoading = true;
     notifyListeners();
     
     try {
-      print('🔍 AuthViewModel: Checking conductor role...');
+      print('🔍 Checking roles...');
       _isConductor = await _authService.isConductor();
-      print('🔍 AuthViewModel: isConductor = $_isConductor');
+      _isAdmin = await _authService.isAdmin();  // ✅ FIXED: Store result
+      print('🔍 isConductor: $_isConductor, isAdmin: $_isAdmin');
     } catch (e) {
-      print('🔍 AuthViewModel: Role check error: $e');
+      print('🔍 Role check error: $e');
       _isConductor = false;
+      _isAdmin = false;      // ✅ FIXED: Reset on error
     } finally {
       _isLoading = false;
-      notifyListeners(); // ✅ Only called ONCE here
+      notifyListeners();
     }
   }
 }

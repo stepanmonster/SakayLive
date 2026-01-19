@@ -1,6 +1,7 @@
 // lib/app.dart - FULL ROUTING FIXED ✅
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sakaylive/screens/admin/admin_page.dart';
 import '../viewmodels/map_view_model.dart';
 import '../viewmodels/auth_view_model.dart';
 import 'package:sakaylive/screens/map_screen.dart';
@@ -23,15 +24,46 @@ class App extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: ThemeData(fontFamily: 'Poppins'),
         
-        initialRoute: '/landing',  // Start here
+        home: const AuthWrapper(),  // Role-based entry
+        initialRoute: null,
+        
+        // ALL existing routes preserved ✅
         routes: {
           '/landing': (context) => const LandingPage3(),
           '/map': (context) => const MapScreen(),
           '/login': (context) => const LoginPage(),
-          '/conductor': (context) => const ConductorDashboard(),
+          '/conductor': (context) => const ConductorDashboard(),  // FAB/Drawer target
         },
       ),
     );
   }
 }
+
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AuthViewModel>(
+      builder: (context, authViewModel, child) {
+        if (authViewModel.isLoading) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        
+        if (!authViewModel.isLoggedIn) {
+          return const LandingPage3();
+        }
+
+        // ✅ NEW PRIORITY: Admin > Conductor/Commuter both → MapScreen
+        if (authViewModel.isAdmin!) {
+          return const AdminPage(); // Replace: AdminPanelScreen()
+        } 
+        
+        // ✅ BOTH conductors + commuters → MapScreen (FAB shows conductor features)
+        return const MapScreen();
+      },
+    );
+  }
+}
+
 
