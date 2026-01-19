@@ -16,10 +16,16 @@ class SignUpPage extends StatefulWidget {
 
 class _SignUpPageState extends State<SignUpPage> {
   final AuthService _authService = AuthService();
+
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
+
+  // New controllers for conductor-specific fields
+  final TextEditingController _conductorLicenseController = TextEditingController();
+  final TextEditingController _employeeNumberController = TextEditingController();
+
   bool _isLoading = false;
   bool _isConductor = false;
 
@@ -50,6 +56,18 @@ class _SignUpPageState extends State<SignUpPage> {
       return;
     }
 
+    // Extra validation when registering as conductor
+    if (_isConductor) {
+      if (_conductorLicenseController.text.trim().isEmpty) {
+        _showError('Please enter your conductor license number');
+        return;
+      }
+      if (_employeeNumberController.text.trim().isEmpty) {
+        _showError('Please enter your employee number');
+        return;
+      }
+    }
+
     setState(() {
       _isLoading = true;
     });
@@ -60,7 +78,10 @@ class _SignUpPageState extends State<SignUpPage> {
         _emailController.text.trim(),
         _passwordController.text.trim(),
         _nameController.text.trim(),
-        isConductor: _isConductor,  // ← CRITICAL: Pass checkbox state
+        isConductor: _isConductor,
+        // pass these into your AuthService and Firestore model
+        conductorLicense: _conductorLicenseController.text.trim(),
+        employeeNumber: _employeeNumberController.text.trim(),
       );
 
       if (mounted) {
@@ -121,6 +142,8 @@ class _SignUpPageState extends State<SignUpPage> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _conductorLicenseController.dispose();
+    _employeeNumberController.dispose();
     super.dispose();
   }
 
@@ -181,6 +204,8 @@ class _SignUpPageState extends State<SignUpPage> {
                             ),
                           ),
                           const SizedBox(height: 5),
+
+                          // Name
                           const Text(
                             'Name',
                             style: TextStyle(
@@ -194,6 +219,8 @@ class _SignUpPageState extends State<SignUpPage> {
                             controller: _nameController,
                           ),
                           const SizedBox(height: 16),
+
+                          // Email
                           const Text(
                             'Email',
                             style: TextStyle(
@@ -207,6 +234,8 @@ class _SignUpPageState extends State<SignUpPage> {
                             keyboardType: TextInputType.emailAddress,
                             controller: _emailController,
                           ),
+
+                          // Conductor checkbox
                           CheckboxListTile(
                             title: const Text(
                               'Request Conductor Access (Pending admin approval)',
@@ -225,7 +254,40 @@ class _SignUpPageState extends State<SignUpPage> {
                             controlAffinity: ListTileControlAffinity.leading,
                             activeColor: tan,
                           ),
+
+                          // Conductor-only fields
+                          if (_isConductor) ...[
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Conductor License Number',
+                              style: TextStyle(
+                                color: kDarkNavy,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _FormField(
+                              hint: 'Enter conductor license number',
+                              controller: _conductorLicenseController,
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Employee Number',
+                              style: TextStyle(
+                                color: kDarkNavy,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _FormField(
+                              hint: 'Enter employee number',
+                              controller: _employeeNumberController,
+                            ),
+                          ],
+
                           const SizedBox(height: 16),
+
+                          // Password
                           const Text(
                             'Password',
                             style: TextStyle(
@@ -240,6 +302,8 @@ class _SignUpPageState extends State<SignUpPage> {
                             controller: _passwordController,
                           ),
                           const SizedBox(height: 16),
+
+                          // Confirm password
                           const Text(
                             'Enter Password Again',
                             style: TextStyle(
@@ -254,6 +318,8 @@ class _SignUpPageState extends State<SignUpPage> {
                             controller: _confirmPasswordController,
                           ),
                           const SizedBox(height: 24),
+
+                          // Submit button
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(

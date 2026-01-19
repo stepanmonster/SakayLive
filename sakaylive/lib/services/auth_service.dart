@@ -24,7 +24,7 @@ class AuthService {
     await _db.child('userEmails').child(_emailKey(email)).set(uid);
   }
 
-  // Add this PUBLIC method to AuthService
+  // PUBLIC method to get route data
   Future<DataSnapshot> getRouteData(String path) async {
     final snapshot = await _db.child(path).get();
     return snapshot;
