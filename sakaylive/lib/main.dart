@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'firebase_options.dart';
+import 'screens/landing_page1.dart';
 import './screens/app.dart';  // ✅ Your perfect routes
 
 Future<void> main() async {

@@ -24,13 +24,13 @@ class AuthService {
     await _db.child('userEmails').child(_emailKey(email)).set(uid);
   }
 
-  // Add this PUBLIC method to AuthService
+  // PUBLIC method to get route data
   Future<DataSnapshot> getRouteData(String path) async {
     final snapshot = await _db.child(path).get();
     return snapshot;
   }
 
-  // ✅ NEW: Check if user is conductor (custom claims first, then RTDB)
+  // ✅ Check if user is conductor (custom claims first, then RTDB)
   Future<bool> isConductor() async {
     final user = _auth.currentUser;
     if (user == null) return false;
@@ -47,7 +47,8 @@ class AuthService {
 
     // Fallback to RTDB role
     try {
-      final userSnap = await _db.child('users').child(user.uid).child('isConductor').get();
+      final userSnap =
+          await _db.child('users').child(user.uid).child('isConductor').get();
       return userSnap.value == true;
     } catch (e) {
       print('Error reading RTDB role: $e');
@@ -55,20 +56,23 @@ class AuthService {
     }
   }
 
+  // ✅ UPDATED: extra fields for conductor
   Future<User?> signUpWithEmail(
     String email,
     String password,
     String username, {
     bool isConductor = false,
+    String? conductorLicense,
+    String? employeeNumber,
   }) async {
     try {
       UserCredential result = await _auth.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password.trim(),
       );
-      
+
       User? user = result.user;
-      
+
       if (user != null) {
         final normalizedEmail = email.trim().toLowerCase();
 
@@ -77,13 +81,17 @@ class AuthService {
           'username': username,
           'email': normalizedEmail,
           'role': isConductor ? 'conductor' : 'user',
-          'isConductor': isConductor,  // ✅ Boolean for RTDB rules
+          'isConductor': isConductor,             // Boolean for RTDB rules
+          'conductorLicense':
+              isConductor ? conductorLicense : null, // NEW
+          'employeeNumber':
+              isConductor ? employeeNumber : null,   // NEW
           'createdAt': DateTime.now().millisecondsSinceEpoch,
         });
 
         await indexEmailForLookup(normalizedEmail, user.uid);
       }
-      
+
       return user;
     } on FirebaseAuthException catch (e) {
       print('Sign up error: ${e.message}');

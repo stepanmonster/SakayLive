@@ -4,9 +4,9 @@ import 'package:provider/provider.dart';
 import '../viewmodels/map_view_model.dart';
 import '../viewmodels/auth_view_model.dart';
 import 'package:sakaylive/screens/map_screen.dart';
-import 'package:sakaylive/screens/landing_page3.dart';  // ← ADD YOUR LANDING SCREEN
 import 'package:sakaylive/screens/login_page.dart';    // ← ADD YOUR LOGIN SCREEN
 import 'package:sakaylive/screens/conductor/conductor_dashboard.dart'; // ← IF EXISTS
+import 'landing_page1.dart';   
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -25,7 +25,7 @@ class App extends StatelessWidget {
         
         initialRoute: '/landing',  // Start here
         routes: {
-          '/landing': (context) => const LandingPage3(),
+          '/landing': (context) => const LandingPage1(),
           '/map': (context) => const MapScreen(),
           '/login': (context) => const LoginPage(),
           '/conductor': (context) => const ConductorDashboard(),
