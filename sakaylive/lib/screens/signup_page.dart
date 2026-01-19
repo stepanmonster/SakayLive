@@ -1,6 +1,11 @@
+import 'dart:ffi';
+
 import 'package:flutter/material.dart';
 import 'theme.dart';
 import '../services/auth_service.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:sakaylive/screens/map_screen.dart';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -68,6 +73,7 @@ class _SignUpPageState extends State<SignUpPage> {
     });
 
     try {
+      // ✅ FIXED: Pass _isConductor to handle BOTH user creation + request
       await _authService.signUpWithEmail(
         _emailController.text.trim(),
         _passwordController.text.trim(),
@@ -78,13 +84,20 @@ class _SignUpPageState extends State<SignUpPage> {
         employeeNumber: _employeeNumberController.text.trim(),
       );
 
-      // Success - navigate back to landing page
       if (mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        // ✅ FIXED: Navigate to AuthWrapper root (handles ALL roles)
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/',  // ← ROOT = AuthWrapper (Admin/Conductor/Commuter logic)
+          (route) => false,
+        );
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Account created successfully!'),
-            backgroundColor: Colors.green,
+          SnackBar(
+            content: Text(_isConductor
+              ? 'Account created! Conductor request sent for admin approval.'
+              : 'Account created successfully!'),
+            backgroundColor: _isConductor ? Colors.orange : Colors.green,
           ),
         );
       }
@@ -98,6 +111,8 @@ class _SignUpPageState extends State<SignUpPage> {
       }
     }
   }
+
+
 
   String _getErrorMessage(String error) {
     if (error.contains('email-already-in-use')) {
@@ -223,7 +238,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           // Conductor checkbox
                           CheckboxListTile(
                             title: const Text(
-                              'Register as Conductor (Admin approval required)',
+                              'Request Conductor Access (Pending admin approval)',
                               style: TextStyle(
                                 color: kDarkNavy,
                                 fontWeight: FontWeight.w500,
@@ -231,13 +246,11 @@ class _SignUpPageState extends State<SignUpPage> {
                               ),
                             ),
                             value: _isConductor,
-                            onChanged: _isLoading
-                                ? null
-                                : (value) {
-                                    setState(() {
-                                      _isConductor = value ?? false;
-                                    });
-                                  },
+                            onChanged: _isLoading ? null : (value) {
+                              setState(() {
+                                _isConductor = value ?? false;
+                              });
+                            },
                             controlAffinity: ListTileControlAffinity.leading,
                             activeColor: tan,
                           ),

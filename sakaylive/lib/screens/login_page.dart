@@ -35,34 +35,34 @@ class _LoginPageState extends State<LoginPage> {
       _isLoading = true;
     });
 
-    try {
+     try {
       await _authService.signInWithEmail(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-      );
+          _emailController.text.trim(),
+          _passwordController.text.trim(),
+        );
 
-      // ✅ FIXED - Go to landing page, NOT popUntil (which closes app)
+      final isAdmin = await _authService.isAdmin();
+      print('🔍 DEBUG: isAdmin = $isAdmin');
+
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Logged in! Admin: $isAdmin')),
+        );
+        
+        // ✅ SMART NAVIGATION - Go to AuthWrapper root
         Navigator.pushNamedAndRemoveUntil(
           context, 
-          '/map', 
-          (route) => false,  // Remove ALL previous routes
-        );
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Logged in successfully!'),
-            backgroundColor: Colors.green,
-          ),
+          '/',  // ← ROOT (AuthWrapper) - NOT '/map'
+          (route) => false,
         );
       }
     } catch (e) {
       _showError(_getErrorMessage(e.toString()));
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      _isLoading = false;
     }
   }
+
 
   Future<void> _handleForgotPassword() async {
   final email = _emailController.text.trim().toLowerCase();
