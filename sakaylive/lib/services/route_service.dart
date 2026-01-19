@@ -97,13 +97,19 @@ class RouteService {
 
       if (endIdx != null && candidate.pointIndex < endIdx) {
         results.add(
-          _buildTripOption([
-            TripLeg(
-              cachedRoute: candidate.cachedRoute,
-              pickupIndex: candidate.pointIndex,
-              dropoffIndex: endIdx,
-            ),
-          ]),
+          _buildTripOption(
+            legs: [
+              TripLeg(
+                cachedRoute: candidate.cachedRoute,
+                pickupIndex: candidate.pointIndex,
+                dropoffIndex: endIdx,
+              ),
+            ],
+            userLat: userLat,
+            userLng: userLng,
+            destLat: destLat,
+            destLng: destLng,
+          ),
         );
       }
     }
@@ -130,18 +136,24 @@ class RouteService {
             // Validate direction (indices must increase)
             if (pickupIdx1 < dropoffIdx1 && pickupIdx2 < dropoffIdx2) {
               results.add(
-                _buildTripOption([
-                  TripLeg(
-                    cachedRoute: leg1.cachedRoute,
-                    pickupIndex: pickupIdx1,
-                    dropoffIndex: dropoffIdx1,
-                  ),
-                  TripLeg(
-                    cachedRoute: leg2.cachedRoute,
-                    pickupIndex: pickupIdx2,
-                    dropoffIndex: dropoffIdx2,
-                  ),
-                ]),
+                _buildTripOption(
+                  legs: [
+                    TripLeg(
+                      cachedRoute: leg1.cachedRoute,
+                      pickupIndex: pickupIdx1,
+                      dropoffIndex: dropoffIdx1,
+                    ),
+                    TripLeg(
+                      cachedRoute: leg2.cachedRoute,
+                      pickupIndex: pickupIdx2,
+                      dropoffIndex: dropoffIdx2,
+                    ),
+                  ],
+                  userLat: userLat,
+                  userLng: userLng,
+                  destLat: destLat,
+                  destLng: destLng,
+                ),
               );
             }
           }
@@ -149,9 +161,31 @@ class RouteService {
       }
     }
 
-    // Sort by total time and return top 3
+    // Sort by total time and return top 3 unique routes
     results.sort((a, b) => a.totalTimeMinutes.compareTo(b.totalTimeMinutes));
-    return results.take(3).toList();
+
+    // Deduplicate by route combination (avoid showing same route combo multiple times)
+    final Set<String> seenCombos = {};
+    final List<TripOption> uniqueResults = [];
+
+    for (var option in results) {
+      // Create a unique key based on route numbers and transfer status
+      final routeKey = option.legs
+          .map(
+            (leg) =>
+                '${leg.cachedRoute.routeNum}-${leg.cachedRoute.directionIndex}',
+          )
+          .join('|');
+
+      if (!seenCombos.contains(routeKey)) {
+        seenCombos.add(routeKey);
+        uniqueResults.add(option);
+      }
+
+      if (uniqueResults.length >= 3) break;
+    }
+
+    return uniqueResults;
   }
 
   _RouteCandidate? _findClosestPoint(
@@ -227,17 +261,79 @@ class RouteService {
     return null;
   }
 
-  TripOption _buildTripOption(List<TripLeg> legs) {
-    int totalTime = 0;
+  TripOption _buildTripOption({
+    required List<TripLeg> legs,
+    required double userLat,
+    required double userLng,
+    required double destLat,
+    required double destLng,
+  }) {
+    int rideTime = 0;
+    double totalWalkMeters = 0;
 
+    // Calculate ride time for each leg
     for (var leg in legs) {
       int nodes = (leg.dropoffIndex - leg.pickupIndex).abs();
-      totalTime += GeoUtils.estimateTravelTime(nodes);
+      rideTime += GeoUtils.estimateTravelTime(nodes);
     }
 
-    String description = legs.length == 1
-        ? "Ride ${legs[0].cachedRoute.routeNum}"
-        : "${legs[0].cachedRoute.routeNum} ➔ ${legs[1].cachedRoute.routeNum}";
+    // Calculate walk to first pickup
+    final firstLeg = legs.first;
+    final pickupCoords = firstLeg.cachedRoute.coordinates[firstLeg.pickupIndex];
+    totalWalkMeters += GeoUtils.fastDistance(
+      userLat,
+      userLng,
+      pickupCoords[1],
+      pickupCoords[0],
+    );
+
+    // Calculate transfer walks
+    for (int i = 0; i < legs.length - 1; i++) {
+      final currentLeg = legs[i];
+      final nextLeg = legs[i + 1];
+      final dropoffCoords =
+          currentLeg.cachedRoute.coordinates[currentLeg.dropoffIndex];
+      final nextPickupCoords =
+          nextLeg.cachedRoute.coordinates[nextLeg.pickupIndex];
+      totalWalkMeters += GeoUtils.fastDistance(
+        dropoffCoords[1],
+        dropoffCoords[0],
+        nextPickupCoords[1],
+        nextPickupCoords[0],
+      );
+    }
+
+    // Calculate walk from last dropoff to destination
+    final lastLeg = legs.last;
+    final dropoffCoords = lastLeg.cachedRoute.coordinates[lastLeg.dropoffIndex];
+    totalWalkMeters += GeoUtils.fastDistance(
+      dropoffCoords[1],
+      dropoffCoords[0],
+      destLat,
+      destLng,
+    );
+
+    // Estimate walking time: ~80 meters per minute
+    final walkTimeMin = (totalWalkMeters / 80).ceil();
+    final totalTime = rideTime + walkTimeMin;
+
+    // Build meaningful description using direction names
+    String description;
+    if (legs.length == 1) {
+      final dirName =
+          legs[0].cachedRoute.directions[legs[0]
+              .cachedRoute
+              .directionIndex]['name'] ??
+          '';
+      description = "Via $dirName";
+    } else {
+      final dir1Name =
+          legs[0].cachedRoute.directions[legs[0]
+              .cachedRoute
+              .directionIndex]['name'] ??
+          '';
+      description = "Via $dir1Name • 1 Transfer";
+    }
 
     return TripOption(
       legs: legs,

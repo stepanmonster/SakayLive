@@ -42,14 +42,22 @@ class TripOption {
   Map<String, dynamic> toDisplayMap() {
     final primaryRoute = legs.first.routeData;
 
+    // Build route numbers string (e.g., "Route 9" or "Route 9 → Route 10")
+    final routeNums = legs
+        .map((leg) => 'Route ${leg.cachedRoute.routeNum}')
+        .join(' → ');
+
     return {
       "type": "trip_option",
       "num": primaryRouteNum,
+      "routeNums": routeNums,
       "dest": description,
       "status": isTransfer ? "Transfer" : "Direct",
       "color": primaryColor,
       "time": "$totalTimeMinutes min",
       "totalTime": totalTimeMinutes,
+      "rideCount": legs.length,
+      "isTransfer": isTransfer,
       "walk_dist_text": "View Map",
       "activeDir": legs.first.activeDir,
       "route_data": primaryRoute,
