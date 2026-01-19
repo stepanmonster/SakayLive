@@ -78,33 +78,48 @@ class AuthService {
   }
 
 
-    Future<void> signUpWithEmail(String email, String password, String name, {bool isConductor = false}) async {
-      final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-      
-      final uid = credential.user!.uid;
-      
-      await FirebaseDatabase.instance.ref('users/$uid').set({
-        'userId': uid,
-        'email': email,
-        'username': name,
-        'role': null,
-        'createdAt': ServerValue.timestamp,
-      });
+    Future<void> signUpWithEmail(
+  String email,
+  String password,
+  String name, {
+  bool isConductor = false,
+  String? conductorLicense,
+  String? employeeNumber,
+}) async {
+  // Create auth user
+  final credential = await _auth.createUserWithEmailAndPassword(
+    email: email.trim(),
+    password: password.trim(),
+  );
 
-      // ✅ CREATE CONDUCTOR REQUEST if requested
-      if (isConductor) {
-        await FirebaseDatabase.instance.ref('conductorRequests/$uid').set({
-          'userId': uid,
-          'username': name,
-          'email': email,
-          'status': 'pending',
-          'createdAt': ServerValue.timestamp,
-        });
-      }
-    }
+  final uid = credential.user!.uid;
+
+  // Base user record
+  await _db.child('users/$uid').set({
+    'userId': uid,
+    'email': email.trim(),
+    'username': name.trim(),
+    'role': null, // admin will set 'conductor' after approval
+    'createdAt': ServerValue.timestamp,
+  });
+
+  // Index email for quick lookup (optional but you already support it)
+  await indexEmailForLookup(email, uid);
+
+  // Create conductor request if requested
+  if (isConductor) {
+    await _db.child('conductorRequests/$uid').set({
+      'userId': uid,
+      'username': name.trim(),
+      'email': email.trim(),
+      'conductorLicense': conductorLicense?.trim(),
+      'employeeNumber': employeeNumber?.trim(),
+      'status': 'pending',
+      'createdAt': ServerValue.timestamp,
+    });
+  }
+}
+
 
     Future<User?> signInWithEmail(String email, String password) async {
       try {

@@ -51,7 +51,7 @@ class AuthWrapper extends StatelessWidget {
         }
         
         if (!authViewModel.isLoggedIn) {
-          return const LandingPage3();
+          return const LandingPage1();
         }
 
         // ✅ NEW PRIORITY: Admin > Conductor/Commuter both → MapScreen
