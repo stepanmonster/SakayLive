@@ -1,12 +1,11 @@
-// lib/main.dart
+// lib/main.dart - FIXED
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'firebase_options.dart';
-import './screens/app.dart';
-import 'screens/landing_page3.dart';
+import './screens/app.dart';  // ✅ Your perfect routes
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,26 +16,9 @@ Future<void> main() async {
   ));
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await dotenv.load(fileName: ".env");
-  MapboxOptions.setAccessToken(
-    dotenv.get('MAPBOX_ACCESS_TOKEN', fallback: ''),
-  );
+  MapboxOptions.setAccessToken(dotenv.get('MAPBOX_ACCESS_TOKEN', fallback: ''));
 
-  runApp(const MyRootApp());
-}
-
-class MyRootApp extends StatelessWidget {
-  const MyRootApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: LandingPage3(), // always start on landing page
-    );
-  }
+  runApp(const App());  // ✅ Use YOUR app.dart, NOT MyRootApp
 }
