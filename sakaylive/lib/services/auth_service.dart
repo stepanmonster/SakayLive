@@ -17,66 +17,112 @@ class AuthService {
 
   Future<bool> isEmailRegisteredInAppDb(String email) async {
     final snap = await _db.child('userEmails').child(_emailKey(email)).get();
-    return snap.exists && snap.value != null; // one-time existence check
+    return snap.exists && snap.value != null;
   }
 
-  // call this in signUpWithEmail after writing /users/{uid}
   Future<void> indexEmailForLookup(String email, String uid) async {
     await _db.child('userEmails').child(_emailKey(email)).set(uid);
   }
 
-  // Sign up with email & password
-  Future<User?> signUpWithEmail(String email, String password, String username) async {
+  // PUBLIC method to get route data
+  Future<DataSnapshot> getRouteData(String path) async {
+    final snapshot = await _db.child(path).get();
+    return snapshot;
+  }
+
+  Future<bool> isConductor() async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+
+    // Custom claims first (keep existing)
     try {
-      UserCredential result = await _auth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password.trim(),
-      );
-      
-      User? user = result.user;
-      
-      // Store user data in Realtime Database
-      if (user != null) {
-        final normalizedEmail = email.trim().toLowerCase();
+      final idTokenResult = await user.getIdTokenResult(true);
+      if (idTokenResult.claims?['conductor'] == true) return true;
+    } catch (_) {} // Silent fail
 
-        await _db.child('users').child(user.uid).set({
-          'userId': user.uid,
-          'username': username,
-          'email': normalizedEmail,
-          'role': 'user',
-          'createdAt': DateTime.now().millisecondsSinceEpoch,
-        });
-
-        await indexEmailForLookup(normalizedEmail, user.uid);
+    // RTDB - ✅ ONLY returns true for exact "conductor" string
+    try {
+      final snap = await _db.child('users').child(user.uid).child('role').get();
+      
+      // ✅ STRICT: Only true if role exists AND equals "conductor"
+      if (snap.exists) {
+        final role = snap.value?.toString().trim().toLowerCase();
+        return role == 'conductor';
       }
-      
-      return user;
-    } on FirebaseAuthException catch (e) {
-      print('Sign up error: ${e.message}');
-      rethrow;
+      return false; // No role field = false
+    } catch (_) {
+      return false; // Any error = false
     }
   }
 
-  // Sign in with email & password
-  Future<User?> signInWithEmail(String email, String password) async {
+
+  Future<bool> isAdmin() async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+
     try {
-      UserCredential result = await _auth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password.trim(),
-      );
-      return result.user;
-    } on FirebaseAuthException catch (e) {
-      print('Sign in error: ${e.message}');
-      rethrow;
+      // Custom claims first (future-proof)
+      final idTokenResult = await user.getIdTokenResult(true);
+      if (idTokenResult.claims?['admin'] == true) return true;
+    } catch (_) {}
+
+    // RTDB manual flag (your current method)
+    try {
+      final snap = await _db.child('users').child(user.uid).child('isAdmin').get();
+      print('🔍 DEBUG RTDB isAdmin: ${snap.value}'); // Add this
+      return snap.value == true;
+    } catch (e) {
+      print('🔍 isAdmin error: $e');
+      return false;
     }
   }
 
-  // Sign out
+
+    Future<void> signUpWithEmail(String email, String password, String name, {bool isConductor = false}) async {
+      final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      
+      final uid = credential.user!.uid;
+      
+      await FirebaseDatabase.instance.ref('users/$uid').set({
+        'userId': uid,
+        'email': email,
+        'username': name,
+        'role': null,
+        'createdAt': ServerValue.timestamp,
+      });
+
+      // ✅ CREATE CONDUCTOR REQUEST if requested
+      if (isConductor) {
+        await FirebaseDatabase.instance.ref('conductorRequests/$uid').set({
+          'userId': uid,
+          'username': name,
+          'email': email,
+          'status': 'pending',
+          'createdAt': ServerValue.timestamp,
+        });
+      }
+    }
+
+    Future<User?> signInWithEmail(String email, String password) async {
+      try {
+        UserCredential result = await _auth.signInWithEmailAndPassword(
+          email: email.trim(),
+          password: password.trim(),
+        );
+        return result.user;
+      } on FirebaseAuthException catch (e) {
+        print('Sign in error: ${e.message}');
+        rethrow;
+      }
+    }
+
   Future<void> signOut() async {
     await _auth.signOut();
   }
 
-  // Reset password
   Future<void> resetPassword(String email) async {
     try {
       await _auth.sendPasswordResetEmail(email: email.trim());

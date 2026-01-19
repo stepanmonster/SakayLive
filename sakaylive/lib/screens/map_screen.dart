@@ -1,640 +1,468 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:math';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+// lib/features/map/map_screen.dart
 import 'package:geolocator/geolocator.dart' as geo;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-// Import package and hide Color to prevent conflicts
-import 'package:mapbox_search/mapbox_search.dart' hide Color;
+import 'package:flutter/material.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:sakaylive/screens/login_page.dart';
+import 'package:sakaylive/screens/routes_list_page.dart';
+import 'package:sakaylive/screens/search_page.dart';
 import 'package:sakaylive/screens/theme.dart';
+import 'package:sakaylive/screens/conductor/conductor_dashboard.dart';
+import 'auth_gate.dart';
+import 'package:sakaylive/viewmodels/map_view_model.dart';
 import 'package:sakaylive/widgets/sakay_bottom_sheet.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:sakaylive/services/auth_service.dart';
+import 'package:sakaylive/viewmodels/auth_view_model.dart';
+import 'package:sakaylive/services/auth_service.dart';
 
+/// Map Screen - View layer following MVVM pattern.
+/// Only responsible for UI rendering and user interaction forwarding.
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
+
   @override
   State<MapScreen> createState() => _MapScreenState();
 }
 
 class _MapScreenState extends State<MapScreen> {
-  // --- CONTROLLERS ---
-  MapboxMap? _mapboxMap;
-  PointAnnotationManager? _pointAnnotationManager;
-
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
   final TextEditingController _searchController = TextEditingController();
-
-  // --- SEARCH CONFIG ---
-  // FIXED: Using GeoCoding class (Wrapper) which takes params in constructor
-  late GeoCoding _geocoding;
-  Timer? _debounce;
-
-  // --- STATE ---
-  bool _isFetchingLocation = false;
-  List<Map<String, dynamic>> _displayList = [];
-  String? _selectedRouteNum;
-
-  // Store user location for search bias
-  geo.Position? _userLocation;
-
-  // --- DATA (Local Routes) ---
-  final List<Map<String, dynamic>> _localRoutes = [
-    {
-      "type": "route",
-      "num": "3",
-      "dest": "Ungka via CPU",
-      "color": "blue",
-      "directions": [
-        {"name": "To City Proper", "asset": "assets/routes/route_3.geojson"},
-        {"name": "To Ungka Terminal", "asset": "assets/routes/route_3.geojson"},
-      ],
-      "activeDir": 0,
-      "status": "Every 5 mins",
-      "time": "5 min",
-    },
-    {
-      "type": "route",
-      "num": "4",
-      "dest": "Ungka via Diversion",
-      "color": "orange",
-      "directions": [
-        {"name": "To City Proper", "asset": "assets/routes/route_4.geojson"},
-        {"name": "To Ungka Terminal", "asset": "assets/routes/route_4.geojson"},
-      ],
-      "activeDir": 0,
-      "status": "Arriving",
-      "time": "2 min",
-    },
-    {
-      "type": "route",
-      "num": "10",
-      "dest": "Tagbak Terminal",
-      "color": "green",
-      "directions": [
-        {"name": "To City Proper", "asset": "assets/routes/route_10.geojson"},
-        {"name": "To Tagbak", "asset": "assets/routes/route_10.geojson"},
-      ],
-      "activeDir": 0,
-      "status": "Loading",
-      "time": "12 min",
-    },
-    {
-      "type": "route",
-      "num": "5",
-      "dest": "Festive Walk via SM",
-      "color": "red",
-      "directions": [
-        {"name": "To City Proper", "asset": "assets/routes/route_5.geojson"},
-        {"name": "To Festive Walk", "asset": "assets/routes/route_5.geojson"},
-      ],
-      "activeDir": 0,
-      "status": "Departing",
-      "time": "8 min",
-    },
-    {
-      "type": "route",
-      "num": "9",
-      "dest": "Mohon Terminal",
-      "color": "purple",
-      "directions": [
-        {"name": "To City Proper", "asset": "assets/routes/route_9.geojson"},
-        {"name": "To Mohon", "asset": "assets/routes/route_9.geojson"},
-      ],
-      "activeDir": 0,
-      "status": "Delayed",
-      "time": "15 min",
-    },
-  ];
+  List<Map<String, dynamic>> _cachedRoutes = [];
+  final AuthService _authService = AuthService();
 
   @override
   void initState() {
     super.initState();
-    _displayList = List.from(_localRoutes);
-
-    // 1. Get Token from Env
-    final String token = dotenv.get('MAPBOX_ACCESS_TOKEN', fallback: '');
-
-    // 2. Initialize GeoCoding with Constructor Constraints
-    if (token.isNotEmpty) {
-      MapBoxSearch.init(token); // Global init
-
-      // FIXED: 'country' and 'limit' are defined HERE in the constructor
-      _geocoding = GeoCoding(
-        limit: 5,
-        country: "PH", // Restricts to Philippines
-        types: [PlaceType.place, PlaceType.address, PlaceType.poi],
-      );
-    } else {
-      debugPrint("⚠️ WARNING: Mapbox Access Token is missing in .env");
-      _geocoding = GeoCoding(limit: 5, country: "PH");
-    }
-
-    _searchController.addListener(_onSearchChanged);
+    // You might want to initialize Firebase here if needed
+    // But Firebase initialization should typically be in main.dart
   }
 
   @override
   void dispose() {
-    _debounce?.cancel();
     _searchController.dispose();
     _sheetController.dispose();
     super.dispose();
   }
 
-  // --- SEARCH LOGIC (Fixed for GeoCoding Wrapper) ---
-  void _onSearchChanged() {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    final query = _searchController.text;
+  void _onMapCreated(MapboxMap map, MapViewModel viewModel) async {
+    map.location.updateSettings(LocationComponentSettings(enabled: true, pulsingEnabled: true));
+    map.logo.updateSettings(LogoSettings(marginBottom: 150, marginLeft: 16));
+    map.attribution.updateSettings(AttributionSettings(marginBottom: 150, marginLeft: 100));
 
-    if (query.isEmpty) {
-      if (mounted) {
-        setState(() {
-          _displayList = List.from(_localRoutes);
-          _selectedRouteNum = null;
-        });
-      }
-      _updateBusMarkers();
-      return;
-    }
+    await viewModel.initialize(map);  // Wait for completion
+    print("✅ MapViewModel fully initialized");  // Debug
+    viewModel.fetchUserLocation();
+  }
 
-    // Local Filter
-    final localResults = _localRoutes.where((route) {
-      final num = route['num'].toString().toLowerCase();
-      final dest = route['dest'].toString().toLowerCase();
-      return num.contains(query.toLowerCase()) ||
-          dest.contains(query.toLowerCase());
-    }).toList();
 
-    if (mounted) setState(() => _displayList = localResults);
+  void _openSearchPage(MapViewModel viewModel) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SearchPage(
+          searchBoxApi: viewModel.searchBoxApi,
+          sessionToken: viewModel.sessionToken,
+        ),
+      ),
+    );
 
-    // API Search
-    _debounce = Timer(const Duration(milliseconds: 500), () async {
-      if (query.length < 3) return;
-
-      try {
-        final double biasLat = _userLocation?.latitude ?? 10.7202;
-        final double biasLng = _userLocation?.longitude ?? 122.5644;
-
-        // FIXED: Using getPlaces() (not forward)
-        // FIXED: proximity uses Record syntax (lat: ..., long: ...)
-        final response = await _geocoding.getPlaces(
-          query,
-          proximity: Proximity.LatLong(lat: biasLat, long: biasLng),
+    if (result != null && result is Map<String, dynamic>) {
+      final success = await viewModel.planTripToPlace(result);
+      if (success) {
+        _searchController.text = result['dest'];
+        _sheetController.animateTo(
+          0.4,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
         );
-
-        response.fold(
-          (success) {
-            // success is List<MapBoxPlace>
-            final formattedApiResults = success.map((place) {
-              // Extract coords from the record or object
-              final lat = place.center?.lat ?? 0.0;
-              final long = place.center?.long ?? 0.0;
-
-              return {
-                "type": "place",
-                "num": "📍",
-                "dest": place.text ?? "Unknown",
-                "status": place.placeName ?? "",
-                "color": "grey",
-                "coords": (lat: lat, long: long),
-                "time": "",
-              };
-            }).toList();
-
-            if (mounted) {
-              setState(() {
-                _displayList = [...localResults, ...formattedApiResults];
-              });
-            }
-          },
-          (failure) {
-            debugPrint("API Error: ${failure.message}");
-          },
-        );
-      } catch (e) {
-        debugPrint("Exception during search: $e");
-      }
-    });
-  }
-
-  // --- SELECTION LOGIC ---
-  void _handleItemSelection(Map<String, dynamic> item) {
-    if (item['type'] == 'route') {
-      _selectRoute(item);
-    } else {
-      _selectApiPlace(item);
-    }
-  }
-
-  void _selectApiPlace(Map<String, dynamic> place) async {
-    FocusScope.of(context).unfocus();
-
-    // Safely extract from Record
-    final coords = place['coords'];
-    final double lat = coords.lat;
-    final double long = coords.long;
-
-    if (_pointAnnotationManager != null) {
-      await _pointAnnotationManager?.deleteAll();
-      await _pointAnnotationManager?.create(
-        PointAnnotationOptions(
-          geometry: Point(coordinates: Position(long, lat)),
-          textField: "📍",
-          textSize: 30,
-          textOffset: [0, -0.5],
-          textColor: Colors.red.value,
-        ),
-      );
-    }
-
-    _mapboxMap?.flyTo(
-      CameraOptions(
-        center: Point(coordinates: Position(long, lat)),
-        zoom: 16.0,
-      ),
-      MapAnimationOptions(duration: 1500),
-    );
-  }
-
-  void _selectRoute(Map<String, dynamic> route) {
-    FocusScope.of(context).unfocus();
-    setState(() => _selectedRouteNum = route['num']);
-    _drawRouteLine(route);
-    _updateBusMarkers();
-    _mapboxMap?.flyTo(
-      CameraOptions(
-        center: Point(
-          coordinates: Position(
-            route['lng'] ?? 122.5644,
-            route['lat'] ?? 10.7202,
-          ),
-        ),
-        zoom: 15.0,
-        pitch: 30.0,
-      ),
-      MapAnimationOptions(duration: 1200),
-    );
-  }
-
-  // --- MAP & MARKER LOGIC ---
-  void _onMapCreated(MapboxMap mapboxMap) {
-    _mapboxMap = mapboxMap;
-    mapboxMap.compass.updateSettings(CompassSettings(enabled: false));
-    mapboxMap.scaleBar.updateSettings(ScaleBarSettings(enabled: false));
-    mapboxMap.logo.updateSettings(
-      LogoSettings(
-        position: OrnamentPosition.BOTTOM_LEFT,
-        marginBottom: 150.0,
-        marginLeft: 16.0,
-      ),
-    );
-    mapboxMap.attribution.updateSettings(
-      AttributionSettings(
-        position: OrnamentPosition.BOTTOM_LEFT,
-        marginBottom: 150.0,
-        marginLeft: 100.0,
-      ),
-    );
-    mapboxMap.location.updateSettings(
-      LocationComponentSettings(enabled: true, pulsingEnabled: true),
-    );
-    _handleLocationPermission();
-  }
-
-  void _onStyleLoaded(StyleLoadedEventData data) async {
-    if (_mapboxMap == null) return;
-    try {
-      _pointAnnotationManager = await _mapboxMap!.annotations
-          .createPointAnnotationManager();
-      _pointAnnotationManager?.addOnPointAnnotationClickListener(
-        _PointTapHandler(onTap: (annotation) => _onBusClicked(annotation)),
-      );
-    } catch (e) {
-      debugPrint("Error: $e");
-    }
-  }
-
-  Future<void> _drawRouteLine(Map<String, dynamic> route) async {
-    if (_mapboxMap == null) return;
-    try {
-      int activeIdx = route['activeDir'];
-      String assetPath = route['directions'][activeIdx]['asset'];
-      final String? geojsonString = await _safeLoadAsset(assetPath);
-      if (geojsonString == null) return;
-
-      final style = _mapboxMap!.style;
-      if (await style.styleSourceExists("route-source")) {
-        await style.removeStyleLayer("route-layer");
-        await style.removeStyleSource("route-source");
-      }
-      await style.addSource(
-        GeoJsonSource(id: "route-source", data: geojsonString),
-      );
-      await style.addLayer(
-        LineLayer(
-          id: "route-layer",
-          sourceId: "route-source",
-          lineColor: _getRouteColor(route['color']).value,
-          lineWidth: 5.0,
-          lineCap: LineCap.ROUND,
-          lineJoin: LineJoin.ROUND,
-          lineOpacity: 0.8,
-        ),
-      );
-    } catch (e) {
-      debugPrint("Draw Error: $e");
-    }
-  }
-
-  Future<void> _updateBusMarkers() async {
-    if (_pointAnnotationManager == null) return;
-    await _pointAnnotationManager?.deleteAll();
-    final random = Random();
-
-    for (var route in _localRoutes) {
-      if (_selectedRouteNum != null && route['num'] != _selectedRouteNum)
-        continue;
-
-      try {
-        String assetPath = route['directions'][route['activeDir']]['asset'];
-        final String? geojsonString = await _safeLoadAsset(assetPath);
-        if (geojsonString == null) continue;
-
-        final Map<String, dynamic> geojsonData = json.decode(geojsonString);
-        List coords = _extractCoordinates(geojsonData);
-
-        if (coords.isNotEmpty) {
-          final randomIndex = random.nextInt(coords.length);
-          route['lat'] = coords[randomIndex][1].toDouble();
-          route['lng'] = coords[randomIndex][0].toDouble();
-
-          await _pointAnnotationManager?.create(
-            PointAnnotationOptions(
-              geometry: Point(
-                coordinates: Position(route['lng'], route['lat']),
-              ),
-              textField: "🚌",
-              textSize: 24.0,
-              textOffset: [0, -0.5],
-              textColor: Colors.black.value,
-              iconImage: "marker-15",
-              iconOpacity: 0,
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("No routes found within walking distance."),
             ),
           );
         }
-      } catch (e) {
-        debugPrint("Spawn Error: $e");
       }
     }
   }
 
-  void _onBusClicked(PointAnnotation a) {
-    final p = a.geometry;
-    if (p == null) return;
-    final match = _localRoutes.firstWhere(
-      (r) => (r['lng'] - p.coordinates.lng).abs() < 0.0001,
-      orElse: () => {},
+  void _openRoutesPage(MapViewModel viewModel) async {
+    final selected = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const RoutesListPage()),
     );
-    if (match.isNotEmpty) _selectRoute(match);
+
+    if (selected != null && selected is Map<String, dynamic>) {
+      final route = viewModel.localRoutes.firstWhere(
+        (r) => r['num'] == selected['num'],
+        orElse: () => selected,
+      );
+      if (selected['activeDir'] != null) {
+        route['activeDir'] = selected['activeDir'];
+      }
+      viewModel.selectRoute(route);
+      _sheetController.animateTo(
+        0.18,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
-  // --- UI BUILDER ---
-  @override
-  Widget build(BuildContext context) {
-    final double bottomPadding = MediaQuery.of(context).padding.bottom;
-    const double floatMargin = 16.0;
-    const double handleHeight = 24.0;
-    const double searchSectionHeight = 66.0;
-    const double buttonsSectionHeight = 80.0;
+  void _handleItemSelection(Map<String, dynamic> item, MapViewModel viewModel) {
+    if (item['type'] == 'trip_option') {
+      viewModel.drawTripOnMap(item);
+      _sheetController.animateTo(
+        0.15,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    } else if (item['type'] == 'route') {
+      viewModel.selectRoute(item);
+      _sheetController.animateTo(
+        0.18,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    } else {
+      viewModel.planTripToPlace(item).then((success) {
+        if (success) {
+          _searchController.text = item['dest'];
+          _sheetController.animateTo(
+            0.4,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
+  }
 
-    final double mode1Pixels = handleHeight + searchSectionHeight;
-    final double mode2Pixels = mode1Pixels + buttonsSectionHeight;
+ @override
+Widget build(BuildContext context) {
+  final mapVM = Provider.of<MapViewModel>(context);
+  final authVM = Provider.of<AuthViewModel>(context);
+  
+  return PopScope(
+    canPop: false,
+    onPopInvoked: (didPop) {
+      if (!didPop) {
+        Navigator.pushReplacementNamed(context, '/landing');
+      }
+    },
+    child: _buildScreen(context, mapVM, authVM), // ✅ Pass AuthViewModel instead
+  );
+}
 
-    return Scaffold(
-      key: _scaffoldKey,
-      resizeToAvoidBottomInset: false,
-      extendBody: true,
-      drawer: _buildDrawer(),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final double totalScreenHeight = constraints.maxHeight;
-          final double minSheetSize =
-              (mode1Pixels + floatMargin + bottomPadding) / totalScreenHeight;
-          final double midSheetSize =
-              (mode2Pixels + floatMargin + bottomPadding) / totalScreenHeight;
-          const double maxSheetSize = 0.85;
 
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: MapWidget(
-                  key: const ValueKey("mapbox_main"),
-                  textureView: false,
-                  cameraOptions: CameraOptions(
-                    center: Point(coordinates: Position(122.5644, 10.7202)),
-                    zoom: 13.5,
-                  ),
-                  styleUri:
-                      'mapbox://styles/cjhernia/cmkcq0g9d002h01sudbwmfeho',
-                  onMapCreated: _onMapCreated,
-                  onStyleLoadedListener: _onStyleLoaded,
+
+
+  Widget _buildScreen(BuildContext context, MapViewModel viewModel, AuthViewModel authVM) {
+  final double bottomPadding = MediaQuery.of(context).padding.bottom;
+  final double screenHeight = MediaQuery.of(context).size.height;
+
+  const double headerH = 32.0;
+  const double searchH = 66.0;
+  const double buttonsH = 101.0;
+  final double minSize = (headerH + searchH + bottomPadding) / screenHeight + 0.01;
+  final double midSize = (headerH + searchH + buttonsH + bottomPadding) / screenHeight;
+
+  return FutureBuilder<bool>(
+    future: authVM.authService.isConductor(), // ✅ Use service through ViewModel
+    initialData: false,
+    builder: (context, snapshot) {
+      final bool isConductor = snapshot.data ?? false;
+      final bool isLoggedIn = authVM.isLoggedIn; // ✅ From Provider
+
+      return Scaffold(
+        key: _scaffoldKey,
+        resizeToAvoidBottomInset: false,
+        extendBody: true,
+        drawer: _buildDrawer(authVM.authService, isConductor),
+        body: Stack(
+          children: [
+            // Map Layer - UNCHANGED
+            Positioned.fill(
+              child: MapWidget(
+                key: const ValueKey("mapbox_main"),
+                textureView: false,
+                cameraOptions: CameraOptions(
+                  center: Point(coordinates: Position(122.5644, 10.7202)),
+                  zoom: 13.5,
                 ),
+                styleUri: MapboxStyles.MAPBOX_STREETS,
+                onMapCreated: (map) => _onMapCreated(map, viewModel),
+                onStyleLoadedListener: (_) {},
               ),
-              Positioned(
-                top: 0,
-                left: 0,
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: _circularIconButton(
-                      Icons.menu,
-                      onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            ),
+
+            // Menu Button - UNCHANGED
+            Positioned(
+              top: 0,
+              left: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: _circularIconButton(
+                    Icons.menu,
+                    onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                  ),
+                ), 
+              ),
+            ),
+
+            // Profile/Login Button - ✅ Now uses FutureBuilder data
+             Positioned(
+              top: 0, right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: GestureDetector(
+                    onTap: () {
+                      if (isConductor) {
+                        Navigator.pushNamed(context, '/profile');
+                      } else if (isLoggedIn) {
+                        Navigator.pushNamed(context, '/profile');
+                      } else {
+                        Navigator.pushNamed(context, '/login');
+                      }
+                    },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.95),        // ✅ White background
+                          borderRadius: BorderRadius.circular(20),      // ✅ Rounded corners
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),     // ✅ Subtle shadow
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.8),       // ✅ Soft white border
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isLoggedIn ? Icons.person : Icons.login, 
+                              size: 20,
+                              color: Colors.black87,                     // ✅ Dark icon for contrast
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              isConductor || isLoggedIn ? 'Profile' : 'Login',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600, 
+                                fontSize: 14,
+                                color: Colors.black87,                   // ✅ Dark text for contrast
+                              ),
+                            ),
+                          ],
+                      ),
                     ),
                   ),
                 ),
               ),
+            ),
+            
+            // Location Button - UNCHANGED
+            Positioned(
+              right: 16,
+              bottom: (screenHeight * midSize) + 20,
+              child: _circularIconButton(
+                viewModel.isFetchingLocation ? Icons.hourglass_top : Icons.near_me_outlined,
+                onPressed: viewModel.fetchUserLocation,
+              ),
+            ),
+
+            // CONDUCTOR FAB - ✅ Uses FutureBuilder data
+            if (isConductor)
               Positioned(
                 right: 16,
-                bottom: (totalScreenHeight * minSheetSize) + 10,
-                child: _circularIconButton(
-                  _isFetchingLocation
-                      ? Icons.hourglass_top
-                      : Icons.near_me_outlined,
-                  onPressed: _handleLocationPermission,
-                ),
-              ),
-              DraggableScrollableSheet(
-                controller: _sheetController,
-                initialChildSize: minSheetSize,
-                minChildSize: minSheetSize,
-                maxChildSize: maxSheetSize,
-                snap: true,
-                snapSizes: [minSheetSize, midSheetSize, maxSheetSize],
-                builder: (context, scrollController) {
-                  return SakayBottomSheet(
-                    scrollController: scrollController,
-                    searchController: _searchController,
-                    routes: _displayList,
-                    selectedRouteNum: _selectedRouteNum,
-                    bottomPadding: bottomPadding,
-                    onRouteSelected: (item) => _handleItemSelection(item),
-                    onRouteSwap: (item) {
-                      if (item['type'] == 'route') {
-                        setState(
-                          () => item['activeDir'] = (item['activeDir'] + 1) % 2,
-                        );
-                        if (_selectedRouteNum == item['num']) {
-                          _drawRouteLine(item);
-                          _updateBusMarkers();
-                        }
-                      }
-                    },
-                    onSearchTap: () {
-                      _sheetController.animateTo(
-                        0.85,
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOut,
+                bottom: (screenHeight * minSize) + 30,
+                child: Container(
+                  height: 56,
+                  width: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(1.0),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.admin_panel_settings, color: Colors.white, size: 24),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ConductorDashboard()),
                       );
                     },
-                    onSearchClear: () {
-                      _searchController.clear();
-                      FocusScope.of(context).unfocus();
-                      setState(() {
-                        _selectedRouteNum = null;
-                        _displayList = List.from(_localRoutes);
-                      });
-                      _updateBusMarkers();
-                    },
-                  );
-                },
+                  ),
+                ),
               ),
-            ],
+
+            // Bottom Sheet - UNCHANGED
+            DraggableScrollableSheet(
+              controller: _sheetController,
+              initialChildSize: minSize,
+              minChildSize: minSize,
+              maxChildSize: 0.85,
+              snap: true,
+              snapSizes: [minSize, midSize, 0.85],
+              builder: (context, scrollController) {
+                return SakayBottomSheet(
+                  scrollController: scrollController,
+                  searchController: _searchController,
+                  routes: viewModel.displayList,
+                  selectedRouteNum: viewModel.selectedRouteNum,
+                  bottomPadding: bottomPadding,
+                  onRouteSelected: (item) => _handleItemSelection(item, viewModel),
+                  onRouteSwap: (item) {
+                    if (item['type'] == 'route') {
+                      viewModel.swapRouteDirection(item);
+                      if (viewModel.selectedRouteNum == item['num']) {
+                        viewModel.selectRoute(item);
+                      }
+                    }
+                  },
+                  onSearchTap: () => _openSearchPage(viewModel),
+                  onSearchClear: () {
+                    _searchController.clear();
+                    FocusScope.of(context).unfocus();
+                    viewModel.clearSelection();
+                    _sheetController.animateTo(
+                      midSize,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                    );
+                  },
+                  onRoutesTap: () => _openRoutesPage(viewModel),
+                );
+              },
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+
+
+  Widget _buildDrawer(AuthService authService, bool isConductor) {
+  final user = authService.currentUser;
+  final isLoggedIn = user != null;
+
+  final drawerItems = <Widget>[
+    ListTile(
+      leading: const Icon(Icons.payment),
+      title: const Text("Transit Passes"),
+      onTap: () {
+        // Add functionality here
+      },
+    ),
+  ];
+
+  // ONLY conductors see this item
+  if (isConductor) {
+    drawerItems.add(
+      ListTile(
+        leading: const Icon(Icons.badge),
+        title: const Text("Conductor Panel"),
+        onTap: () {
+          Navigator.pop(context);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const ConductorDashboard(),
+            ),
           );
         },
       ),
     );
   }
 
-  // --- HELPERS ---
-  Widget _buildDrawer() {
-    return Drawer(
-      backgroundColor: beige,
-      child: SafeArea(
-        child: Column(
-          children: [
-            Container(
-              height: 120,
-              width: double.infinity,
-              padding: const EdgeInsets.all(20.0),
-              child: Image.asset(
-                'assets/images/sakaylive_logo.png',
-                height: 80,
-                errorBuilder: (c, o, s) => const Center(
-                  child: Text(
-                    "SakayLive",
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
+  return Drawer(
+    backgroundColor: beige,
+    child: SafeArea(
+      child: Column(
+        children: [
+          Container(
+            height: 120,
+            width: double.infinity,
+            padding: const EdgeInsets.all(20.0),
+            child: Image.asset(
+              'assets/images/sakaylive_logo.png',
+              height: 80,
+              width: 200,
             ),
-            Expanded(
-              child: ListView(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.payment),
-                    title: const Text("Transit Passes"),
-                    onTap: () {},
-                  ),
-                ],
-              ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: drawerItems,
             ),
-            ListTile(
-              leading: const Icon(Icons.person),
-              title: const Text("Login"),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const LoginPage()),
-              ),
-            ),
-          ],
-        ),
+          ),
+          // ✅ DYNAMIC LOGIN/LOGOUT BUTTON
+          ListTile(
+            leading: Icon(isLoggedIn ? Icons.logout : Icons.person),
+            title: Text(isLoggedIn ? "Logout" : "Login"),
+            onTap: () async {
+              if (isLoggedIn) {
+                // ✅ LOGOUT LOGIC
+                await authService.signOut();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Logged out successfully'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  Navigator.pop(context); // Close drawer
+                }
+              } else {
+                // Navigate to login
+                Navigator.pop(context); // Close drawer first
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginPage()),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+  Widget _circularIconButton(IconData icon, {VoidCallback? onPressed}) {
+    return Container(
+      height: 44,
+      width: 44,
+      decoration: const BoxDecoration(
+        color: beige,
+        shape: BoxShape.circle,
+        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6)],
+      ),
+      child: IconButton(
+        icon: Icon(icon, color: Colors.black87, size: 20),
+        onPressed: onPressed,
       ),
     );
   }
-
-  Widget _circularIconButton(IconData i, {VoidCallback? onPressed}) =>
-      Container(
-        height: 44,
-        width: 44,
-        decoration: const BoxDecoration(
-          color: beige,
-          shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6)],
-        ),
-        child: IconButton(
-          icon: Icon(i, color: Colors.black87, size: 20),
-          onPressed: onPressed,
-        ),
-      );
-
-  Future<String?> _safeLoadAsset(String path) async {
-    try {
-      return await rootBundle.loadString(path);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  List _extractCoordinates(Map<String, dynamic> d) =>
-      d['type'] == 'FeatureCollection'
-      ? d['features'][0]['geometry']['coordinates']
-      : d['geometry']['coordinates'];
-
-  Color _getRouteColor(String c) {
-    switch (c) {
-      case 'blue':
-        return Colors.blue.shade700;
-      case 'orange':
-        return Colors.orange.shade700;
-      case 'green':
-        return Colors.green.shade700;
-      case 'red':
-        return Colors.red.shade700;
-      case 'grey':
-        return Colors.grey.shade700;
-      default:
-        return Colors.purple.shade700;
-    }
-  }
-
-  Future<void> _handleLocationPermission() async {
-    setState(() => _isFetchingLocation = true);
-    try {
-      final pos = await geo.Geolocator.getCurrentPosition();
-
-      // Update user location for search bias
-      setState(() => _userLocation = pos);
-
-      _mapboxMap?.flyTo(
-        CameraOptions(
-          center: Point(coordinates: Position(pos.longitude, pos.latitude)),
-          zoom: 14.5,
-        ),
-        MapAnimationOptions(duration: 2000),
-      );
-      await _updateBusMarkers();
-    } catch (e) {
-      debugPrint("Loc: $e");
-    }
-    if (mounted) setState(() => _isFetchingLocation = false);
-  }
-}
-
-class _PointTapHandler extends OnPointAnnotationClickListener {
-  final Function(PointAnnotation) onTap;
-  _PointTapHandler({required this.onTap});
-  @override
-  void onPointAnnotationClick(PointAnnotation annotation) => onTap(annotation);
 }

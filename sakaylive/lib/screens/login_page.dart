@@ -3,6 +3,7 @@ import 'theme.dart';
 import 'signup_page.dart';
 import '../services/auth_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:sakaylive/screens/landing_page3.dart';
 
 
 class LoginPage extends StatefulWidget {
@@ -34,32 +35,34 @@ class _LoginPageState extends State<LoginPage> {
       _isLoading = true;
     });
 
-    try {
+     try {
       await _authService.signInWithEmail(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-      );
+          _emailController.text.trim(),
+          _passwordController.text.trim(),
+        );
 
-      // Success - navigate back to landing page
+      final isAdmin = await _authService.isAdmin();
+      print('🔍 DEBUG: isAdmin = $isAdmin');
+
       if (mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Logged in successfully!'),
-            backgroundColor: Colors.green,
-          ),
+          SnackBar(content: Text('Logged in! Admin: $isAdmin')),
+        );
+        
+        // ✅ SMART NAVIGATION - Go to AuthWrapper root
+        Navigator.pushNamedAndRemoveUntil(
+          context, 
+          '/',  // ← ROOT (AuthWrapper) - NOT '/map'
+          (route) => false,
         );
       }
     } catch (e) {
       _showError(_getErrorMessage(e.toString()));
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      _isLoading = false;
     }
   }
+
 
   Future<void> _handleForgotPassword() async {
   final email = _emailController.text.trim().toLowerCase();
@@ -148,9 +151,19 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
+ @override
+Widget build(BuildContext context) {
+    return WillPopScope(  // Use WillPopScope for maximum compatibility
+    onWillPop: () async {
+      // Check if this is the root route (LandingPage3 -> LoginPage)
+      final canPop = Navigator.of(context).canPop();
+      if (canPop) {
+        Navigator.pop(context);  // Go back to previous screen
+        return false;
+      }
+      return true;  // Allow app to close only if somehow at true root
+    },// Allow normal popping back to previous screen
+    child: Scaffold(
       backgroundColor: beige,
       body: SafeArea(
         child: SingleChildScrollView(
@@ -220,7 +233,6 @@ class _LoginPageState extends State<LoginPage> {
                               filled: true,
                               fillColor: Colors.white,
                               hintText: 'Enter email',
-                              hintStyle: TextStyle(fontWeight: FontWeight.w100),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
@@ -330,6 +342,7 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
