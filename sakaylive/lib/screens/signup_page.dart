@@ -20,11 +20,14 @@ class _SignUpPageState extends State<SignUpPage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
 
   // New controllers for conductor-specific fields
-  final TextEditingController _conductorLicenseController = TextEditingController();
-  final TextEditingController _employeeNumberController = TextEditingController();
+  final TextEditingController _conductorLicenseController =
+      TextEditingController();
+  final TextEditingController _employeeNumberController =
+      TextEditingController();
 
   bool _isLoading = false;
   bool _isConductor = false;
@@ -79,24 +82,25 @@ class _SignUpPageState extends State<SignUpPage> {
         _passwordController.text.trim(),
         _nameController.text.trim(),
         isConductor: _isConductor,
+
         // pass these into your AuthService and Firestore model
-        conductorLicense: _conductorLicenseController.text.trim(),
-        employeeNumber: _employeeNumberController.text.trim(),
       );
 
       if (mounted) {
         // ✅ FIXED: Navigate to AuthWrapper root (handles ALL roles)
         Navigator.pushNamedAndRemoveUntil(
           context,
-          '/',  // ← ROOT = AuthWrapper (Admin/Conductor/Commuter logic)
+          '/', // ← ROOT = AuthWrapper (Admin/Conductor/Commuter logic)
           (route) => false,
         );
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_isConductor
-              ? 'Account created! Conductor request sent for admin approval.'
-              : 'Account created successfully!'),
+            content: Text(
+              _isConductor
+                  ? 'Account created! Conductor request sent for admin approval.'
+                  : 'Account created successfully!',
+            ),
             backgroundColor: _isConductor ? Colors.orange : Colors.green,
           ),
         );
@@ -111,8 +115,6 @@ class _SignUpPageState extends State<SignUpPage> {
       }
     }
   }
-
-
 
   String _getErrorMessage(String error) {
     if (error.contains('email-already-in-use')) {
@@ -129,10 +131,7 @@ class _SignUpPageState extends State<SignUpPage> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
@@ -246,11 +245,13 @@ class _SignUpPageState extends State<SignUpPage> {
                               ),
                             ),
                             value: _isConductor,
-                            onChanged: _isLoading ? null : (value) {
-                              setState(() {
-                                _isConductor = value ?? false;
-                              });
-                            },
+                            onChanged: _isLoading
+                                ? null
+                                : (value) {
+                                    setState(() {
+                                      _isConductor = value ?? false;
+                                    });
+                                  },
                             controlAffinity: ListTileControlAffinity.leading,
                             activeColor: tan,
                           ),
@@ -326,7 +327,9 @@ class _SignUpPageState extends State<SignUpPage> {
                               onPressed: _isLoading ? null : _handleSignUp,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: tan,
-                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),

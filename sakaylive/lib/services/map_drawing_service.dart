@@ -233,12 +233,19 @@ class MapDrawingService {
     }
   }
 
+  /// Helper to safely remove layer and source.
+  /// FIXED: Now checks layer existence separately before removing.
   Future<void> _removeLayerIfExists(String sourceId, String layerId) async {
     final style = _map?.style;
     if (style == null) return;
 
-    if (await style.styleSourceExists(sourceId)) {
+    // 1. Remove Layer First (Visual)
+    if (await style.styleLayerExists(layerId)) {
       await style.removeStyleLayer(layerId);
+    }
+
+    // 2. Remove Source Second (Data)
+    if (await style.styleSourceExists(sourceId)) {
       await style.removeStyleSource(sourceId);
     }
   }
@@ -264,33 +271,41 @@ class MapDrawingService {
     required String colorName,
   }) async {
     if (_map == null) return;
-    
+
     final style = _map!.style;
-    if (await style.styleSourceExists("route-source")) {
-      await style.removeStyleLayer("route-layer");
-      await style.removeStyleSource("route-source");
-    }
-    
-    await style.addSource(GeoJsonSource(id: "route-source", data: json.encode(geoJsonData)));
-    await style.addLayer(LineLayer(
-      id: "route-layer",
-      sourceId: "route-source",
-      lineColor: _getRouteColor(colorName).value,
-      lineWidth: 5.0,
-      lineCap: LineCap.ROUND,
-      lineJoin: LineJoin.ROUND,
-      lineOpacity: 0.8,
-    ));
+    // Safe cleanup before adding
+    await _removeLayerIfExists("route-source", "route-layer");
+
+    await style.addSource(
+      GeoJsonSource(id: "route-source", data: json.encode(geoJsonData)),
+    );
+    await style.addLayer(
+      LineLayer(
+        id: "route-layer",
+        sourceId: "route-source",
+        lineColor: _getRouteColor(colorName).value,
+        lineWidth: 5.0,
+        lineCap: LineCap.ROUND,
+        lineJoin: LineJoin.ROUND,
+        lineOpacity: 0.8,
+      ),
+    );
   }
 
-    Color _getRouteColor(String colorName) {
+  Color _getRouteColor(String colorName) {
     switch (colorName.toLowerCase()) {
-      case 'blue': return Colors.blue;
-      case 'orange': return Colors.orange;
-      case 'green': return Colors.green;
-      case 'red': return Colors.red;
-      case 'purple': return Colors.purple;
-      default: return Colors.blue;
+      case 'blue':
+        return Colors.blue;
+      case 'orange':
+        return Colors.orange;
+      case 'green':
+        return Colors.green;
+      case 'red':
+        return Colors.red;
+      case 'purple':
+        return Colors.purple;
+      default:
+        return Colors.blue;
     }
   }
 
@@ -313,5 +328,93 @@ class MapDrawingService {
       ),
       MapAnimationOptions(duration: 1500),
     );
+  }
+
+  // =========================================================
+  // FIX FOR USER LOCATION CRASH
+  // =========================================================
+
+  /// Draw a blue circle marker at the user's current location
+  Future<void> drawUserLocationMarker({
+    required double lat,
+    required double lng,
+  }) async {
+    if (_map == null) return;
+
+    final style = _map!.style;
+    const sourceId = "user-location-source";
+    const layerId = "user-location-layer";
+    const pulseLayerId = "user-location-pulse-layer";
+
+    // 1. SAFELY REMOVE ALL EXISTING LAYERS/SOURCES FIRST
+    await clearUserLocationMarker();
+
+    // Create GeoJSON point for user location
+    final geoJson = {
+      "type": "Feature",
+      "properties": {},
+      "geometry": {
+        "type": "Point",
+        "coordinates": [lng, lat],
+      },
+    };
+
+    // 2. Add Source
+    await style.addSource(
+      GeoJsonSource(id: sourceId, data: json.encode(geoJson)),
+    );
+
+    // 3. Add Layers (Outer pulse first, then inner dot)
+    await style.addLayer(
+      CircleLayer(
+        id: pulseLayerId,
+        sourceId: sourceId,
+        circleRadius: 20.0,
+        circleColor: Colors.blue.shade200.value,
+        circleOpacity: 0.3,
+        circleStrokeWidth: 0.0,
+      ),
+    );
+
+    await style.addLayer(
+      CircleLayer(
+        id: layerId,
+        sourceId: sourceId,
+        circleRadius: 10.0,
+        circleColor: Colors.blue.shade600.value,
+        circleOpacity: 1.0,
+        circleStrokeWidth: 3.0,
+        circleStrokeColor: Colors.white.value,
+      ),
+    );
+
+    debugPrint("📍 User location marker drawn at: $lat, $lng");
+  }
+
+  /// Safely remove user location marker and all associated layers.
+  /// FIXED: Removes layers first, then the source.
+  Future<void> clearUserLocationMarker() async {
+    if (_map == null) return;
+    final style = _map!.style;
+    const sourceId = "user-location-source";
+    const layerId = "user-location-layer";
+    const pulseLayerId = "user-location-pulse-layer";
+
+    try {
+      // 1. Remove Layers (Visuals)
+      if (await style.styleLayerExists(pulseLayerId)) {
+        await style.removeStyleLayer(pulseLayerId);
+      }
+      if (await style.styleLayerExists(layerId)) {
+        await style.removeStyleLayer(layerId);
+      }
+
+      // 2. Remove Source (Data) - Only safe after layers are gone
+      if (await style.styleSourceExists(sourceId)) {
+        await style.removeStyleSource(sourceId);
+      }
+    } catch (e) {
+      debugPrint("Error clearing user location: $e");
+    }
   }
 }
