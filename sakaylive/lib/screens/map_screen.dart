@@ -187,7 +187,7 @@ class _MapScreenState extends State<MapScreen> {
     MapViewModel viewModel,
     AuthViewModel authVM,
   ) {
-    final double bottomPadding = MediaQuery.of(context).padding.bottom;
+    final double bottomPadding = MediaQuery.viewPaddingOf(context).bottom;
     final double screenHeight = MediaQuery.of(context).size.height;
 
     const double headerH = 40.0;
@@ -394,44 +394,43 @@ class _MapScreenState extends State<MapScreen> {
 
               // Bottom Sheet - UNCHANGED
               DraggableScrollableSheet(
-                controller: _sheetController,
-                initialChildSize: minSize,
-                minChildSize: minSize,
-                maxChildSize: 0.85,
-                snap: true,
-                snapSizes: [minSize, midSize, 0.85],
-                builder: (context, scrollController) {
-                  return SakayBottomSheet(
-                    scrollController: scrollController,
-                    searchController: _searchController,
-                    routes: viewModel.displayList,
-                    selectedRouteNum: viewModel.selectedRouteNum,
-                    bottomPadding: bottomPadding,
-                    onRouteSelected: (item) =>
-                        _handleItemSelection(item, viewModel),
-                    onRouteSwap: (item) {
-                      if (item['type'] == 'route') {
-                        viewModel.swapRouteDirection(item);
-                        if (viewModel.selectedRouteNum == item['num']) {
-                          viewModel.selectRoute(item);
-                        }
-                      }
-                    },
-                    onSearchTap: () => _openSearchPage(viewModel),
-                    onSearchClear: () {
-                      _searchController.clear();
-                      FocusScope.of(context).unfocus();
-                      viewModel.clearSelection();
-                      _sheetController.animateTo(
-                        midSize,
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOut,
-                      );
-                    },
-                    onRoutesTap: () => _openRoutesPage(viewModel),
-                  );
-                },
-              ),
+  controller: _sheetController,
+  initialChildSize: minSize,
+  minChildSize: minSize,
+  maxChildSize: 0.85,
+  snap: true,
+  snapSizes: [minSize, midSize, 0.85],
+  builder: (context, scrollController) {
+    return SakayBottomSheet(  // ❌ REMOVE SafeArea wrapper completely
+      scrollController: scrollController,
+      searchController: _searchController,
+      routes: viewModel.displayList,
+      selectedRouteNum: viewModel.selectedRouteNum,
+      bottomPadding: bottomPadding,  // ✅ This handles ALL nav bar safety
+      onRouteSelected: (item) => _handleItemSelection(item, viewModel),
+      onRouteSwap: (item) {
+        if (item['type'] == 'route') {
+          viewModel.swapRouteDirection(item);
+          if (viewModel.selectedRouteNum == item['num']) {
+            viewModel.selectRoute(item);
+          }
+        }
+      },
+      onSearchTap: () => _openSearchPage(viewModel),
+      onSearchClear: () {
+        _searchController.clear();
+        FocusScope.of(context).unfocus();
+        viewModel.clearSelection();
+        _sheetController.animateTo(
+          midSize,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      },
+      onRoutesTap: () => _openRoutesPage(viewModel),
+    );
+  },
+),
             ],
           ),
         );
