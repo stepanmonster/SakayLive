@@ -20,8 +20,10 @@ class SakayBottomSheet extends StatelessWidget {
   // Live tracking props
   final List<TrackedVehicle> trackedVehicles;
   final bool isTrackingEnabled;
+  final bool showAllBuses;
   final VoidCallback? onToggleTracking;
   final VoidCallback? onViewAllBuses;
+  final VoidCallback? onToggleBusVisibility;
 
   const SakayBottomSheet({
     super.key,
@@ -39,8 +41,10 @@ class SakayBottomSheet extends StatelessWidget {
     this.selectedRouteNum,
     this.trackedVehicles = const [],
     this.isTrackingEnabled = false,
+    this.showAllBuses = false,
     this.onToggleTracking,
     this.onViewAllBuses,
+    this.onToggleBusVisibility,
   });
 
   // Check if we have vehicles to show
@@ -111,23 +115,8 @@ class SakayBottomSheet extends StatelessWidget {
               ),
             ),
 
-            // --- LIVE BUS TRACKING CARD (if enabled) ---
-            SliverToBoxAdapter(
-              child: AnimatedSize(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-                child: isTrackingEnabled
-                    ? Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                        child: LiveBusSummary(
-                          key: const ValueKey('live_bus_summary'),
-                          vehicles: trackedVehicles,
-                          onViewAll: onViewAllBuses,
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ),
+            // --- LIVE BUS TRACKING CARD (REMOVED - now accessed via map button) ---
+            const SliverToBoxAdapter(child: SizedBox.shrink()),
 
             // --- SCROLLABLE LIST ---
             SliverPadding(
@@ -136,7 +125,6 @@ class SakayBottomSheet extends StatelessWidget {
                 delegate: SliverChildBuilderDelegate((context, index) {
                   final route = routes[index];
                   bool isFastest = false;
-                  bool isCheapest = false;
 
                   if (route['type'] == 'trip_option') {
                     final tripOptions = routes
@@ -147,11 +135,6 @@ class SakayBottomSheet extends StatelessWidget {
                         (r) => r['type'] == 'trip_option',
                       );
                       isFastest = index == firstTripIndex;
-
-                      final minRides = tripOptions
-                          .map((r) => r['rideCount'] as int? ?? 999)
-                          .reduce((a, b) => a < b ? a : b);
-                      isCheapest = (route['rideCount'] ?? 999) == minRides;
                     }
                   }
 
@@ -161,7 +144,6 @@ class SakayBottomSheet extends StatelessWidget {
                     onTap: () => onRouteSelected(route),
                     onSwap: () => onRouteSwap(route),
                     isFastest: isFastest,
-                    isCheapest: isCheapest,
                   );
                 }, childCount: routes.length),
               ),
@@ -275,15 +257,20 @@ class SakayBottomSheet extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _actionIcon(Icons.directions_bus, "Routes", onTap: onRoutesTap),
+          // Bus Visibility Toggle -> Now opens Live Bus List Modal
           _actionIcon(
-            isTrackingEnabled ? Icons.gps_fixed : Icons.gps_not_fixed,
-            isTrackingEnabled
-                ? (hasVehicles ? "Live (${trackedVehicles.length})" : "Live")
-                : "Live",
-            onTap: onToggleTracking,
-            isActive: isTrackingEnabled,
+            Icons.format_list_bulleted_rounded,
+            "Live List",
+            onTap: onViewAllBuses,
+            isActive: false, // No active state needed for modal trigger
           ),
+
+          // Routes List (Original "Routes" behavior shifted or just secondary?)
+          // User said "bus button toggle bus visibility instead".
+          // If we want to keep access to routes list, maybe add it as a separate button?
+          // Or assume Search bar handles it.
+          // I'll keep just this one as requested but maybe add Routes as secondary if needed.
+          // Actually, let's keep "Saved" for now as it was.
           _actionIcon(Icons.star, "Saved", onTap: () {}),
         ],
       ),
@@ -296,9 +283,9 @@ class SakayBottomSheet extends StatelessWidget {
     VoidCallback? onTap,
     bool isActive = false,
   }) {
-    final bool isRoutes = l == "Routes";
+    final bool isBuses = l == "Buses";
     final bool isLive = l == "Live";
-    final bool highlighted = isRoutes || (isLive && isActive);
+    final bool highlighted = isBuses && isActive || (isLive && isActive);
     return Semantics(
       button: true,
       label: '$l button',
@@ -320,15 +307,10 @@ class SakayBottomSheet extends StatelessWidget {
                   decoration: BoxDecoration(
                     gradient: highlighted
                         ? LinearGradient(
-                            colors: isLive
-                                ? [
-                                    const Color(0xFF22C55E),
-                                    const Color(0xFF16A34A),
-                                  ]
-                                : [
-                                    const Color(0xFF3B82F6),
-                                    const Color(0xFF2563EB),
-                                  ],
+                            colors: [
+                              const Color(0xFF3B82F6),
+                              const Color(0xFF2563EB),
+                            ],
                           )
                         : null,
                     color: highlighted ? null : Colors.white,
@@ -336,9 +318,7 @@ class SakayBottomSheet extends StatelessWidget {
                     boxShadow: [
                       BoxShadow(
                         color: highlighted
-                            ? (isLive
-                                  ? const Color(0xFF22C55E).withOpacity(0.3)
-                                  : const Color(0xFF3B82F6).withOpacity(0.3))
+                            ? const Color(0xFF3B82F6).withOpacity(0.3)
                             : Colors.black.withOpacity(0.06),
                         blurRadius: highlighted ? 12 : 8,
                         offset: const Offset(0, 4),
@@ -361,9 +341,7 @@ class SakayBottomSheet extends StatelessWidget {
                     fontSize: 12,
                     fontWeight: highlighted ? FontWeight.w700 : FontWeight.w600,
                     color: highlighted
-                        ? (isLive
-                              ? const Color(0xFF16A34A)
-                              : const Color(0xFF2563EB))
+                        ? const Color(0xFF2563EB)
                         : const Color(0xFF5C5C5C),
                     letterSpacing: 0.2,
                   ),
@@ -384,7 +362,6 @@ class _RouteTile extends StatelessWidget {
   final VoidCallback onSwap;
   final bool isSelected;
   final bool isFastest;
-  final bool isCheapest;
 
   const _RouteTile({
     super.key,
@@ -393,7 +370,6 @@ class _RouteTile extends StatelessWidget {
     required this.onSwap,
     this.isSelected = false,
     this.isFastest = false,
-    this.isCheapest = false,
   });
 
   Color _getRouteColor(String c) {
@@ -732,24 +708,6 @@ class _RouteTile extends StatelessWidget {
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFFD97706),
-              ),
-            ),
-          ),
-        if (isCheapest && !isFastest)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFECFDF5), Color(0xFFA7F3D0)],
-              ),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Text(
-              '💰 Cheapest',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF059669),
               ),
             ),
           ),

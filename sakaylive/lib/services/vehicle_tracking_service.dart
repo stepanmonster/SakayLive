@@ -62,10 +62,17 @@ class VehicleTrackingService {
 
       rawData.forEach((key, value) {
         final vehicle = VehiclePosition.fromMap(key.toString(), value);
-        // Only include non-stale vehicles (active in last 2 minutes)
-        if (!vehicle.isStale(thresholdSeconds: 120)) {
-          _rawVehicles.add(vehicle);
+        // FILTER: Skip stale/ghost buses (older than 30 minutes for testing, 5 min for production)
+        // This prevents "ghost buses" from appearing on the map
+        // TODO: Change to 300 (5 min) for production
+        const staleThreshold = 1800; // 30 minutes for testing
+        if (vehicle.isStale(thresholdSeconds: staleThreshold)) {
+          debugPrint(
+            '👻 Skipping stale bus ${vehicle.id} (last seen: ${vehicle.lastSeenText})',
+          );
+          return; // Skip this vehicle
         }
+        _rawVehicles.add(vehicle);
       });
 
       _recalculateTrackedVehicles();
