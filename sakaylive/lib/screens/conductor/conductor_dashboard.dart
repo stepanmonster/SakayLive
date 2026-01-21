@@ -1,8 +1,125 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum BusStatus { green, yellow, red }
+
+@immutable
+class TripSession {
+  final bool isActive;
+  final DateTime? startedAt;
+  final String? busId;
+
+  const TripSession({
+    required this.isActive,
+    this.startedAt,
+    this.busId,
+  });
+
+  Duration get duration {
+    if (!isActive || startedAt == null) return Duration.zero;
+    return DateTime.now().difference(startedAt!);
+  }
+
+  TripSession copyWith({
+    bool? isActive,
+    DateTime? startedAt,
+    String? busId,
+  }) {
+    return TripSession(
+      isActive: isActive ?? this.isActive,
+      startedAt: startedAt ?? this.startedAt,
+      busId: busId ?? this.busId,
+    );
+  }
+}
+
+/// Global controller:
+/// - survives page navigation (in-memory notifier)
+/// - survives app restart (SharedPreferences)
+class TripStateController {
+  TripStateController._();
+
+  static final TripStateController instance = TripStateController._();
+
+  // Exposed state for UI
+  final ValueNotifier<TripSession> session =
+      ValueNotifier(const TripSession(isActive: false));
+
+  // Also persist status + lastUpdated for nicer continuity (optional but helpful)
+  final ValueNotifier<BusStatus> status = ValueNotifier(BusStatus.green);
+  final ValueNotifier<DateTime?> lastUpdated = ValueNotifier(null);
+
+  static const _kTripActive = "trip_active";
+  static const _kTripStartedAt = "trip_started_at";
+  static const _kTripBusId = "trip_bus_id";
+
+  static const _kStatusIndex = "bus_status_index";
+  static const _kLastUpdatedAt = "bus_status_updated_at";
+
+  bool _initialized = false;
+
+  Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
+
+    final prefs = await SharedPreferences.getInstance();
+
+    final active = prefs.getBool(_kTripActive) ?? false;
+    final startedAtMs = prefs.getInt(_kTripStartedAt);
+    final busId = prefs.getString(_kTripBusId);
+
+    final statusIndex = prefs.getInt(_kStatusIndex);
+    final lastUpdatedMs = prefs.getInt(_kLastUpdatedAt);
+
+    session.value = TripSession(
+      isActive: active,
+      startedAt: startedAtMs == null ? null : DateTime.fromMillisecondsSinceEpoch(startedAtMs),
+      busId: busId,
+    );
+
+    if (statusIndex != null && statusIndex >= 0 && statusIndex < BusStatus.values.length) {
+      status.value = BusStatus.values[statusIndex];
+    }
+
+    if (lastUpdatedMs != null) {
+      lastUpdated.value = DateTime.fromMillisecondsSinceEpoch(lastUpdatedMs);
+    }
+  }
+
+  Future<void> startTrip({required String busId}) async {
+    final newSession = TripSession(
+      isActive: true,
+      startedAt: DateTime.now(),
+      busId: busId,
+    );
+    session.value = newSession;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kTripActive, true);
+    await prefs.setInt(_kTripStartedAt, newSession.startedAt!.millisecondsSinceEpoch);
+    await prefs.setString(_kTripBusId, busId);
+  }
+
+  Future<void> endTrip() async {
+    session.value = const TripSession(isActive: false);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kTripActive, false);
+    await prefs.remove(_kTripStartedAt);
+    await prefs.remove(_kTripBusId);
+  }
+
+  Future<void> setBusStatus(BusStatus newStatus) async {
+    status.value = newStatus;
+    lastUpdated.value = DateTime.now();
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kStatusIndex, newStatus.index);
+    await prefs.setInt(_kLastUpdatedAt, lastUpdated.value!.millisecondsSinceEpoch);
+  }
+}
 
 class ConductorDashboard extends StatefulWidget {
   const ConductorDashboard({super.key});
@@ -15,25 +132,36 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
   final List<String> buses = ["E-Bus 01", "E-Bus 02", "E-Bus 03"];
   String selectedBus = "E-Bus 01";
 
-  BusStatus status = BusStatus.green;
-  DateTime? lastUpdated;
-
-  // Trip toggle (future: will enable GPS sharing)
-  bool _tripStarted = false;
-  DateTime? _tripStartTime;
-
   // Clock tick + trip timer tick
   late DateTime _now;
   Timer? _clockTimer;
 
+  bool _loading = true;
+
   @override
   void initState() {
     super.initState();
+
     _now = DateTime.now();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() => _now = DateTime.now());
     });
+
+    _initPersistedState();
+  }
+
+  Future<void> _initPersistedState() async {
+    await TripStateController.instance.init();
+    if (!mounted) return;
+
+    // If trip was active, restore selected bus for dropdown convenience
+    final trip = TripStateController.instance.session.value;
+    if (trip.busId != null && buses.contains(trip.busId)) {
+      selectedBus = trip.busId!;
+    }
+
+    setState(() => _loading = false);
   }
 
   @override
@@ -42,8 +170,8 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
     super.dispose();
   }
 
-  Color get statusColor {
-    switch (status) {
+  Color _colorForStatus(BusStatus s) {
+    switch (s) {
       case BusStatus.green:
         return Colors.green;
       case BusStatus.yellow:
@@ -53,8 +181,8 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
     }
   }
 
-  String get statusLabel {
-    switch (status) {
+  String _labelForStatus(BusStatus s) {
+    switch (s) {
       case BusStatus.green:
         return "Seats Available";
       case BusStatus.yellow:
@@ -64,21 +192,15 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
     }
   }
 
-  String get lastUpdateText {
+  String _lastUpdateText(DateTime? lastUpdated) {
     if (lastUpdated == null) return "Not updated yet";
-    final diff = DateTime.now().difference(lastUpdated!);
+    final diff = DateTime.now().difference(lastUpdated);
     if (diff.inSeconds < 60) return "Updated just now";
     if (diff.inMinutes < 60) return "Updated ${diff.inMinutes} mins ago";
     return "Updated ${diff.inHours} hrs ago";
   }
 
-  Duration get _tripDuration {
-    if (!_tripStarted || _tripStartTime == null) return Duration.zero;
-    return DateTime.now().difference(_tripStartTime!);
-  }
-
-  String get _tripDurationText {
-    final d = _tripDuration;
+  String _tripDurationText(Duration d) {
     final h = d.inHours;
     final m = d.inMinutes.remainder(60);
     final s = d.inSeconds.remainder(60);
@@ -86,371 +208,358 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
     return "${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}";
   }
 
-  void setStatus(BusStatus newStatus) {
-    if (!_tripStarted) return; // safety
-    setState(() {
-      status = newStatus;
-      lastUpdated = DateTime.now();
-    });
+  Future<void> _toggleTrip(bool isActive) async {
+    if (!isActive) {
+      await TripStateController.instance.startTrip(busId: selectedBus);
+    } else {
+      await TripStateController.instance.endTrip();
+    }
 
-    // TODO: Send to backend
-  }
-
-  void _toggleTrip() {
-    setState(() {
-      _tripStarted = !_tripStarted;
-
-      if (_tripStarted) {
-        _tripStartTime = DateTime.now();
-      } else {
-        _tripStartTime = null;
-      }
-    });
+    if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(_tripStarted ? "Trip started." : "Trip ended."),
+        content: Text(!isActive ? "Trip started." : "Trip ended."),
         duration: const Duration(milliseconds: 900),
       ),
     );
   }
 
-  String _playfulCaption(DateTime dt) {
+  Future<void> _setStatus(BusStatus newStatus, bool tripActive) async {
+    if (!tripActive) return;
+    await TripStateController.instance.setBusStatus(newStatus);
+
+    // TODO: Send to backend later
+  }
+
+  String _playfulCaption(DateTime dt, BusStatus s) {
     final h = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
     final m = dt.minute.toString().padLeft(2, '0');
-    switch (status) {
+    switch (s) {
       case BusStatus.green:
-        return "It's $h:$m — SEATS AVAILABLE";
+        return "It’s $h:$m — plenty of seats 🚍✨";
       case BusStatus.yellow:
-        return "It's $h:$m — STANDING ONLY";
+        return "It’s $h:$m — standing ok 😅";
       case BusStatus.red:
-        return "It's $h:$m — FULL HOUSE";
+        return "It’s $h:$m — full house 🔴";
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final ring = statusColor;
-    final screenHeight = MediaQuery.of(context).size.height;
-    final isSmallScreen = screenHeight < 700;
+    if (_loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Conductor Panel"),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // TOP ROW: Start/End Trip + duration on upper right
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _toggleTrip,
-                        icon: Icon(
-                          _tripStarted
-                              ? Icons.stop_circle
-                              : Icons.play_circle_fill,
-                          size: 22,
-                        ),
-                        label: Text(
-                          _tripStarted ? "End Trip" : "Start Trip",
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              _tripStarted ? Colors.black : Colors.indigoAccent,
-                          foregroundColor: Colors.white,
-                          elevation: 3,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
+    return ValueListenableBuilder<TripSession>(
+      valueListenable: TripStateController.instance.session,
+      builder: (context, trip, _) {
+        final tripActive = trip.isActive;
+        final tripDuration = trip.duration;
+
+        return ValueListenableBuilder<BusStatus>(
+          valueListenable: TripStateController.instance.status,
+          builder: (context, busStatus, __) {
+            final ring = _colorForStatus(busStatus);
+
+            return ValueListenableBuilder<DateTime?>(
+              valueListenable: TripStateController.instance.lastUpdated,
+              builder: (context, lastUpdated, ___) {
+                return Scaffold(
+                  appBar: AppBar(
+                    title: const Text("Conductor Panel"),
+                    leading: IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: () => Navigator.of(context).pop(),
                     ),
-                    const SizedBox(width: 12),
-                    Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.black12),
-                      ),
+                  ),
+                  body: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            "TRIP",
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.grey,
-                              letterSpacing: 0.6,
-                            ),
-                          ),
-                          Text(
-                            _tripStarted ? _tripDurationText : "--:--",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                              color: _tripStarted ? Colors.black : Colors.grey,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Assigned bus
-                const Text(
-                  "Assigned Bus",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  value: selectedBus,
-                  items: buses
-                      .map((b) => DropdownMenuItem(value: b, child: Text(b)))
-                      .toList(),
-                  onChanged: (v) => setState(() => selectedBus = v ?? selectedBus),
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Current Status Text
-                Center(
-                  child: Opacity(
-                    opacity: _tripStarted ? 1.0 : 0.6,
-                    child: Column(
-                      children: [
-                        Text(
-                          "Current Status: $statusLabel",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: isSmallScreen ? 17 : 19,
-                            fontWeight: FontWeight.w900,
-                            color: ring,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // WATCH / STATUS DIAL
-                Center(
-                  child: Opacity(
-                    opacity: _tripStarted ? 1.0 : 0.6,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: isSmallScreen ? 200 : 260,
-                          height: isSmallScreen ? 200 : 260,
-                          child: Stack(
-                            alignment: Alignment.center,
+                          // TOP ROW: Start/End Trip + duration upper right
+                          Row(
                             children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      ring.withOpacity(0.95),
-                                      ring.withOpacity(0.55),
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _toggleTrip(tripActive),
+                                  icon: Icon(
+                                    tripActive ? Icons.stop_circle : Icons.play_circle_fill,
+                                    size: 22,
                                   ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: ring.withOpacity(0.28),
-                                      blurRadius: 22,
-                                      spreadRadius: 2,
-                                      offset: const Offset(0, 10),
+                                  label: Text(
+                                    tripActive ? "End Trip" : "Start Trip",
+                                    style: const TextStyle(fontWeight: FontWeight.w900),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: tripActive ? Colors.black : Colors.indigoAccent,
+                                    foregroundColor: Colors.white,
+                                    elevation: 3,
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: Colors.black12),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      "TRIP",
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.grey,
+                                        letterSpacing: 0.6,
+                                      ),
+                                    ),
+                                    Text(
+                                      tripActive ? _tripDurationText(tripDuration) : "--:--",
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w900,
+                                        color: tripActive ? Colors.black : Colors.grey,
+                                      ),
                                     ),
                                   ],
-                                ),
-                              ),
-
-                              CustomPaint(
-                                size: Size(isSmallScreen ? 200 : 260, isSmallScreen ? 200 : 260),
-                                painter: _TickPainter(
-                                  color: Colors.white.withOpacity(0.92),
-                                ),
-                              ),
-
-                              Container(
-                                width: isSmallScreen ? 160 : 205,
-                                height: isSmallScreen ? 160 : 205,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.white,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.08),
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 6),
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              CustomPaint(
-                                size: Size(isSmallScreen ? 160 : 205, isSmallScreen ? 160 : 205),
-                                painter: _HandsPainter(
-                                  now: _now,
-                                  accent: ring,
-                                ),
-                              ),
-
-                              Container(
-                                width: isSmallScreen ? 65 : 82,
-                                height: isSmallScreen ? 65 : 82,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: ring.withOpacity(0.12),
-                                  border: Border.all(
-                                    color: ring.withOpacity(0.35),
-                                    width: 2,
-                                  ),
-                                ),
-                                child: Icon(
-                                  Icons.directions_bus,
-                                  size: isSmallScreen ? 32 : 40,
-                                  color: ring,
-                                ),
-                              ),
-
-                              Positioned(
-                                bottom: isSmallScreen ? 10 : 16,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: ring.withOpacity(0.12),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: ring.withOpacity(0.35),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    status.name.toUpperCase(),
-                                    style: TextStyle(
-                                      color: ring,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: isSmallScreen ? 10 : 12,
-                                      letterSpacing: 0.6,
-                                    ),
-                                  ),
                                 ),
                               ),
                             ],
                           ),
-                        ),
+                          const SizedBox(height: 10),
 
-                        const SizedBox(height: 12),
-                        Text(
-                          _playfulCaption(_now),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontWeight: FontWeight.w700,
-                            fontSize: isSmallScreen ? 13 : 14,
+                          // Assigned bus
+                          const Text(
+                            "Assigned Bus",
+                            style: TextStyle(fontWeight: FontWeight.bold),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          lastUpdateText,
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontWeight: FontWeight.w600,
-                            fontSize: isSmallScreen ? 12 : 13,
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: selectedBus,
+                            items: buses
+                                .map((b) => DropdownMenuItem(value: b, child: Text(b)))
+                                .toList(),
+                            onChanged: (v) {
+                              setState(() => selectedBus = v ?? selectedBus);
+
+                              // If trip is currently active, also persist busId switch (optional)
+                              if (TripStateController.instance.session.value.isActive) {
+                                TripStateController.instance.startTrip(busId: selectedBus);
+                              }
+                            },
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                            ),
                           ),
-                        ),
-                      ],
+
+                          const SizedBox(height: 14),
+
+                          // WATCH / STATUS DIAL
+                          Expanded(
+                            child: Center(
+                              child: Opacity(
+                                opacity: tripActive ? 1.0 : 0.6,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      "Current Status: ${_labelForStatus(busStatus)}",
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w900,
+                                        color: ring,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+
+                                    SizedBox(
+                                      width: 260,
+                                      height: 260,
+                                      child: Stack(
+                                        alignment: Alignment.center,
+                                        children: [
+                                          Container(
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              gradient: LinearGradient(
+                                                colors: [
+                                                  ring.withOpacity(0.95),
+                                                  ring.withOpacity(0.55),
+                                                ],
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: ring.withOpacity(0.28),
+                                                  blurRadius: 22,
+                                                  spreadRadius: 2,
+                                                  offset: const Offset(0, 10),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                          CustomPaint(
+                                            size: const Size(260, 260),
+                                            painter: _TickPainter(
+                                              color: Colors.white.withOpacity(0.92),
+                                            ),
+                                          ),
+
+                                          Container(
+                                            width: 205,
+                                            height: 205,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: Colors.white,
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black.withOpacity(0.08),
+                                                  blurRadius: 10,
+                                                  offset: const Offset(0, 6),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                          CustomPaint(
+                                            size: const Size(205, 205),
+                                            painter: _HandsPainter(
+                                              now: _now,
+                                              accent: ring,
+                                            ),
+                                          ),
+
+                                          Container(
+                                            width: 82,
+                                            height: 82,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: ring.withOpacity(0.12),
+                                              border: Border.all(
+                                                color: ring.withOpacity(0.35),
+                                                width: 2,
+                                              ),
+                                            ),
+                                            child: Icon(
+                                              Icons.directions_bus,
+                                              size: 40,
+                                              color: ring,
+                                            ),
+                                          ),
+
+                                          Positioned(
+                                            bottom: 16,
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 14,
+                                                vertical: 8,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: ring.withOpacity(0.12),
+                                                borderRadius: BorderRadius.circular(999),
+                                                border: Border.all(
+                                                  color: ring.withOpacity(0.35),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                busStatus.name.toUpperCase(),
+                                                style: TextStyle(
+                                                  color: ring,
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 12,
+                                                  letterSpacing: 0.6,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      _playfulCaption(_now, busStatus),
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _lastUpdateText(lastUpdated),
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // Bottom buttons
+                          _bigStatusButton(
+                            enabled: tripActive,
+                            label: "Green — Seats Available",
+                            color: Colors.green,
+                            icon: Icons.event_seat,
+                            onTap: () => _setStatus(BusStatus.green, tripActive),
+                          ),
+                          const SizedBox(height: 12),
+                          _bigStatusButton(
+                            enabled: tripActive,
+                            label: "Yellow — Standing Only",
+                            color: Colors.orange,
+                            icon: Icons.directions_bus,
+                            onTap: () => _setStatus(BusStatus.yellow, tripActive),
+                          ),
+                          const SizedBox(height: 12),
+                          _bigStatusButton(
+                            enabled: tripActive,
+                            label: "Red — Full",
+                            color: Colors.red,
+                            icon: Icons.block,
+                            onTap: () => _setStatus(BusStatus.red, tripActive),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Status buttons
-                Text(
-                  "Update Status:",
-                  style: TextStyle(
-                    fontSize: isSmallScreen ? 16 : 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                _statusButton(
-                  enabled: _tripStarted,
-                  label: "Green – Seats Available",
-                  color: Colors.green,
-                  icon: Icons.event_seat,
-                  onTap: () => setStatus(BusStatus.green),
-                  isSmallScreen: isSmallScreen,
-                ),
-                const SizedBox(height: 10),
-                _statusButton(
-                  enabled: _tripStarted,
-                  label: "Yellow – Standing Only",
-                  color: Colors.orange,
-                  icon: Icons.directions_bus,
-                  onTap: () => setStatus(BusStatus.yellow),
-                  isSmallScreen: isSmallScreen,
-                ),
-                const SizedBox(height: 10),
-                _statusButton(
-                  enabled: _tripStarted,
-                  label: "Red – Full",
-                  color: Colors.red,
-                  icon: Icons.block,
-                  onTap: () => setStatus(BusStatus.red),
-                  isSmallScreen: isSmallScreen,
-                ),
-                
-                // Extra bottom padding for scrolling
-                SizedBox(height: MediaQuery.of(context).padding.bottom + 20),
-              ],
-            ),
-          ),
-        ),
-      ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 
-  Widget _statusButton({
+  Widget _bigStatusButton({
     required bool enabled,
     required String label,
     required Color color,
     required IconData icon,
     required VoidCallback onTap,
-    required bool isSmallScreen,
   }) {
     final Color bg = enabled ? color : Colors.grey.shade400;
     final Color fg = enabled ? Colors.white : Colors.white.withOpacity(0.95);
@@ -458,18 +567,15 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
     final ButtonStyle style = ElevatedButton.styleFrom(
       backgroundColor: bg,
       foregroundColor: fg,
-      elevation: enabled ? 4 : 0,
-      minimumSize: Size.fromHeight(isSmallScreen ? 55 : 65),
-      padding: EdgeInsets.symmetric(
-        horizontal: isSmallScreen ? 12 : 16,
-        vertical: isSmallScreen ? 12 : 16,
-      ),
+      elevation: enabled ? 6 : 0,
+      minimumSize: const Size.fromHeight(78),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(isSmallScreen ? 12 : 16),
+        borderRadius: BorderRadius.circular(18),
       ),
-      textStyle: TextStyle(
-        fontSize: isSmallScreen ? 15 : 17,
-        fontWeight: FontWeight.w700,
+      textStyle: const TextStyle(
+        fontSize: 20,
+        fontWeight: FontWeight.w800,
       ),
     );
 
@@ -479,10 +585,9 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
         style: style,
         onPressed: enabled ? onTap : null,
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            Icon(icon, size: isSmallScreen ? 22 : 26),
-            SizedBox(width: isSmallScreen ? 12 : 16),
+            Icon(icon, size: 28),
+            const SizedBox(width: 14),
             Expanded(
               child: Text(
                 label,
@@ -512,18 +617,18 @@ class _TickPainter extends CustomPainter {
 
     for (int i = 0; i < 60; i++) {
       final isHour = i % 5 == 0;
-      final tickLen = isHour ? size.width * 0.05 : size.width * 0.025;
-      paint.strokeWidth = isHour ? 2.5 : 1.5;
+      final tickLen = isHour ? 14.0 : 7.0;
+      paint.strokeWidth = isHour ? 3.0 : 2.0;
 
       final angle = (math.pi * 2) * (i / 60) - math.pi / 2;
 
       final p1 = Offset(
-        center.dx + (radius - 10) * math.cos(angle),
-        center.dy + (radius - 10) * math.sin(angle),
+        center.dx + (radius - 12) * math.cos(angle),
+        center.dy + (radius - 12) * math.sin(angle),
       );
       final p2 = Offset(
-        center.dx + (radius - 10 - tickLen) * math.cos(angle),
-        center.dy + (radius - 10 - tickLen) * math.sin(angle),
+        center.dx + (radius - 12 - tickLen) * math.cos(angle),
+        center.dy + (radius - 12 - tickLen) * math.sin(angle),
       );
 
       canvas.drawLine(p1, p2, paint);
@@ -556,7 +661,7 @@ class _HandsPainter extends CustomPainter {
 
     final hourPaint = Paint()
       ..color = Colors.black.withOpacity(0.88)
-      ..strokeWidth = size.width * 0.027 // Responsive stroke width
+      ..strokeWidth = 5.5
       ..strokeCap = StrokeCap.round;
 
     final hourEnd = Offset(
@@ -567,7 +672,7 @@ class _HandsPainter extends CustomPainter {
 
     final minutePaint = Paint()
       ..color = Colors.black.withOpacity(0.78)
-      ..strokeWidth = size.width * 0.02
+      ..strokeWidth = 4
       ..strokeCap = StrokeCap.round;
 
     final minEnd = Offset(
@@ -578,7 +683,7 @@ class _HandsPainter extends CustomPainter {
 
     final secondPaint = Paint()
       ..color = accent
-      ..strokeWidth = size.width * 0.012
+      ..strokeWidth = 2.4
       ..strokeCap = StrokeCap.round;
 
     final secEnd = Offset(
@@ -587,11 +692,11 @@ class _HandsPainter extends CustomPainter {
     );
     canvas.drawLine(center, secEnd, secondPaint);
 
-    // Playful "bus hand" follows minutes
+    // Playful “bus hand” follows minutes
     final busAngle = (math.pi * 2) * ((minutes % 60) / 60.0) - math.pi / 2;
     final busNeedlePaint = Paint()
       ..color = accent.withOpacity(0.55)
-      ..strokeWidth = size.width * 0.03
+      ..strokeWidth = 6
       ..strokeCap = StrokeCap.round;
 
     final busNeedleEnd = Offset(
@@ -605,28 +710,19 @@ class _HandsPainter extends CustomPainter {
       center.dy + (radius * 0.83) * math.sin(busAngle),
     );
 
-    canvas.drawCircle(busTip, size.width * 0.054, Paint()..color = Colors.white);
+    canvas.drawCircle(busTip, 11, Paint()..color = Colors.white);
+
     final busPaint = Paint()..color = accent;
-    final rect = Rect.fromCenter(
-      center: busTip,
-      width: size.width * 0.068,
-      height: size.width * 0.044,
-    );
-    final rrect = RRect.fromRectAndRadius(
-      rect,
-      Radius.circular(size.width * 0.015),
-    );
+    final rect = Rect.fromCenter(center: busTip, width: 14, height: 9);
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(3));
     canvas.drawRRect(rrect, busPaint);
 
     final wheelPaint = Paint()..color = accent.withOpacity(0.9);
-    final wheelRadius = size.width * 0.011;
-    canvas.drawCircle(busTip.translate(-size.width * 0.019, size.width * 0.029), 
-        wheelRadius, wheelPaint);
-    canvas.drawCircle(busTip.translate(size.width * 0.019, size.width * 0.029), 
-        wheelRadius, wheelPaint);
+    canvas.drawCircle(busTip.translate(-4, 6), 2.2, wheelPaint);
+    canvas.drawCircle(busTip.translate(4, 6), 2.2, wheelPaint);
 
-    canvas.drawCircle(center, size.width * 0.029, Paint()..color = Colors.white);
-    canvas.drawCircle(center, size.width * 0.02, Paint()..color = accent);
+    canvas.drawCircle(center, 6, Paint()..color = Colors.white);
+    canvas.drawCircle(center, 4, Paint()..color = accent);
   }
 
   @override
