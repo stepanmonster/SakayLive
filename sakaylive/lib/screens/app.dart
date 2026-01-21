@@ -7,6 +7,7 @@ import '../viewmodels/auth_view_model.dart';
 import 'package:sakaylive/screens/map_screen.dart';
 import 'package:sakaylive/screens/login_page.dart';    // ← ADD YOUR LOGIN SCREEN
 import 'package:sakaylive/screens/conductor/conductor_dashboard.dart'; // ← IF EXISTS
+import 'package:sakaylive/screens/account_page.dart';
 import 'landing_page1.dart';   
 
 class App extends StatelessWidget {
@@ -33,6 +34,7 @@ class App extends StatelessWidget {
           '/map': (context) => const MapScreen(),
           '/login': (context) => const LoginPage(),
           '/conductor': (context) => const ConductorDashboard(),  // FAB/Drawer target
+          '/profile': (context) => const AccountPage(),
         },
       ),
     );
