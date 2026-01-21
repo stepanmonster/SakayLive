@@ -409,43 +409,6 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
 
-              // CONDUCTOR FAB - ✅ Uses FutureBuilder data
-              if (isConductor)
-                Positioned(
-                  right: 16,
-                  bottom: (screenHeight * minSize) + 30,
-                  child: Container(
-                    height: 56,
-                    width: 56,
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(1.0),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.admin_panel_settings,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ConductorDashboard(),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-
               // Bus Info Snippet - Shows when a bus marker is tapped
               if (viewModel.hasTappedVehicle)
                 Positioned(
@@ -588,7 +551,6 @@ class _MapScreenState extends State<MapScreen> {
                     _buildDrawerItem(
                       icon: Icons.admin_panel_settings_rounded,
                       label: 'Conductor Panel',
-                      isHighlighted: true,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(

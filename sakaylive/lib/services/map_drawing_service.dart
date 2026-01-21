@@ -370,12 +370,16 @@ class MapDrawingService {
       return;
     }
 
+    // Take a snapshot of pending markers to avoid concurrent modification
+    final markersToProcess = List<BusMarkerData>.from(_pendingBusMarkers);
+    _pendingBusMarkers.clear();
+
     // Clear the lookup map for fresh data
     _busMarkerLookup.clear();
 
     if (_map != null) {
       // 1. Pre-register all necessary colored icons
-      for (final marker in _pendingBusMarkers) {
+      for (final marker in markersToProcess) {
         final colorValue = marker.routeColor.value;
         // Unique ID per color AND route (since route text is baked in)
         final iconId = 'bus-icon-$colorValue-${marker.routeName}';
@@ -407,7 +411,7 @@ class MapDrawingService {
       }
     }
 
-    final options = _pendingBusMarkers.map((marker) {
+    final options = markersToProcess.map((marker) {
       final colorValue = marker.routeColor.value;
       final iconId = 'bus-icon-$colorValue-${marker.routeName}';
 
@@ -443,7 +447,6 @@ class MapDrawingService {
     }).toList();
 
     await _busAnnotationManager!.createMulti(options);
-    _pendingBusMarkers.clear();
   }
 
   /// Clear all bus markers
