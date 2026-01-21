@@ -77,16 +77,13 @@ class SakayBottomSheet extends StatelessWidget {
               backgroundColor: Colors.white,
               elevation: 0,
               scrolledUnderElevation: 0,
-              // Increased height to 240 for better spacing
               toolbarHeight: 188,
               titleSpacing: 0,
               centerTitle: true,
-
-              // The sticky content
               title: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const SizedBox(height: 12), // Top spacing
+                  const SizedBox(height: 12),
                   // Drag Handle
                   Center(
                     child: Container(
@@ -100,21 +97,15 @@ class SakayBottomSheet extends StatelessWidget {
                       ),
                     ),
                   ),
-
-                  const SizedBox(height: 20), // Space between handle and search
+                  const SizedBox(height: 20),
                   // Search Bar
                   _buildSearchBar(),
-
-                  const SizedBox(
-                    height: 12,
-                  ), // Space between search and buttons
+                  const SizedBox(height: 12),
                   // Quick Actions
                   _buildQuickActions(),
-
-                  const SizedBox(height: 16), // Bottom spacing
+                  const SizedBox(height: 16),
                 ],
               ),
-
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
               ),
@@ -144,7 +135,6 @@ class SakayBottomSheet extends StatelessWidget {
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate((context, index) {
                   final route = routes[index];
-                  // Calculate fastest/cheapest for trip_options
                   bool isFastest = false;
                   bool isCheapest = false;
 
@@ -153,13 +143,11 @@ class SakayBottomSheet extends StatelessWidget {
                         .where((r) => r['type'] == 'trip_option')
                         .toList();
                     if (tripOptions.isNotEmpty) {
-                      // Fastest badge only on the FIRST trip option (top result)
                       final firstTripIndex = routes.indexWhere(
                         (r) => r['type'] == 'trip_option',
                       );
                       isFastest = index == firstTripIndex;
 
-                      // Find cheapest (min rideCount = fewer fares)
                       final minRides = tripOptions
                           .map((r) => r['rideCount'] as int? ?? 999)
                           .reduce((a, b) => a < b ? a : b);

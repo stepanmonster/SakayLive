@@ -205,7 +205,7 @@ class _MapScreenState extends State<MapScreen> {
     MapViewModel viewModel,
     AuthViewModel authVM,
   ) {
-    final double bottomPadding = MediaQuery.of(context).padding.bottom;
+    final double bottomPadding = MediaQuery.viewPaddingOf(context).bottom;
     final double screenHeight = MediaQuery.of(context).size.height;
 
     const double headerH = 40.0;
@@ -446,25 +446,13 @@ class _MapScreenState extends State<MapScreen> {
                 snapSizes: [minSize, midSize, 0.85],
                 builder: (context, scrollController) {
                   return SakayBottomSheet(
+                    // ❌ REMOVE SafeArea wrapper completely
                     scrollController: scrollController,
                     searchController: _searchController,
                     routes: viewModel.displayList,
                     selectedRouteNum: viewModel.selectedRouteNum,
-                    bottomPadding: bottomPadding,
-                    // Live tracking props
-                    trackedVehicles: viewModel.trackedVehicles,
-                    isTrackingEnabled: viewModel.isTrackingEnabled,
-                    onToggleTracking: () {
-                      if (viewModel.isTrackingEnabled) {
-                        viewModel.stopVehicleTracking();
-                      } else {
-                        viewModel.startVehicleTracking();
-                      }
-                    },
-                    onViewAllBuses: () {
-                      // Show modal with all tracked buses
-                      _showAllBusesModal(context, viewModel);
-                    },
+                    bottomPadding:
+                        bottomPadding, // ✅ This handles ALL nav bar safety
                     onRouteSelected: (item) =>
                         _handleItemSelection(item, viewModel),
                     onRouteSwap: (item) {
