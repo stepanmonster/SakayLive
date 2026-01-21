@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:sakaylive/services/directions_service.dart';
+import 'dart:ui' as ui;
 
 /// Represents a marker to be added to the map.
 class MarkerData {
@@ -18,13 +20,45 @@ class MarkerData {
   });
 }
 
+/// Represents a bus marker with additional styling info.
+class BusMarkerData {
+  final List<double> coordinates;
+  final String etaText;
+  final String routeName;
+  final Color routeColor;
+  final double heading;
+  final String? vehicleId; // For tap interaction
+  final String occupancyLabel; // Accessibility: 🚍, 🚍⚠️, or 🚍⛔
+
+  BusMarkerData({
+    required this.coordinates,
+    required this.etaText,
+    required this.routeName,
+    required this.routeColor,
+    required this.heading,
+    this.vehicleId,
+    this.occupancyLabel = '🚍',
+  });
+}
+
 /// Service responsible for drawing routes and markers on the Mapbox map.
 class MapDrawingService {
   MapboxMap? _map;
   PointAnnotationManager? _annotationManager;
+  PointAnnotationManager? _busAnnotationManager;
+
+  // Cache of registered bus icon colors to avoid re-generating the same icons
+  final Set<int> _registeredBusColors = {};
+
+  // Callback for bus marker taps
+  Function(String vehicleId, double lat, double lng)? onBusMarkerTapped;
+
+  // Store bus marker annotations for tap detection
+  final Map<String, BusMarkerData> _busMarkerLookup = {};
 
   /// Pending markers to be added in batch.
   final List<MarkerData> _pendingMarkers = [];
+  final List<BusMarkerData> _pendingBusMarkers = [];
 
   bool get isInitialized => _map != null && _annotationManager != null;
 
@@ -35,6 +69,8 @@ class MapDrawingService {
   Future<void> initAnnotationManager() async {
     if (_map == null) return;
     _annotationManager = await _map!.annotations.createPointAnnotationManager();
+    _busAnnotationManager = await _map!.annotations
+        .createPointAnnotationManager();
   }
 
   PointAnnotationManager? get annotationManager => _annotationManager;
@@ -218,6 +254,233 @@ class MapDrawingService {
     await _annotationManager?.deleteAll();
   }
 
+  // =========================================================
+  // BUS MARKER METHODS
+  // =========================================================
+
+  /// Generate a bus icon image with the specified color
+  Future<Uint8List> _generateBusIcon(Color color, String routeText) async {
+    const double size = 32; // Significantly smaller icon size
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    // 1. Draw Shadow
+    final shadowPath = Path()..addOval(Rect.fromLTWH(1, 2, size - 2, size - 2));
+    canvas.drawShadow(shadowPath, Colors.black.withOpacity(0.3), 3, true);
+
+    // 2. Draw White Background Circle
+    final bgPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(size / 2, size / 2), (size / 2) - 1, bgPaint);
+
+    // 3. Draw Colored Border (Ring)
+    final borderPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2; // Thinner border
+    canvas.drawCircle(Offset(size / 2, size / 2), (size / 2) - 2, borderPaint);
+
+    // 4. Draw Bus Icon (Centered)
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(Icons.directions_bus_rounded.codePoint),
+        style: TextStyle(
+          fontSize: 20, // Smaller icon text
+          fontFamily: Icons.directions_bus_rounded.fontFamily,
+          color: color,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset((size - textPainter.width) / 2, (size - textPainter.height) / 2),
+    );
+
+    // ACCESSIBILITY: Secondary Indicator
+    if (color.value == 0xFFEF4444) {
+      // Red = Full
+      _drawBadge(canvas, '⛔', size, size);
+    } else if (color.value == 0xFFF59E0B) {
+      // Yellow = Standing
+      _drawBadge(canvas, '⚠️', size, size);
+    }
+
+    // Convert to Image
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
+  }
+
+  void _drawBadge(Canvas canvas, String icon, double w, double h) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: icon,
+        style: const TextStyle(fontSize: 10),
+      ), // Smaller badge
+      textDirection: TextDirection.ltr,
+    );
+    painter.layout();
+    // Position at bottom right
+    painter.paint(canvas, Offset(w - painter.width, h - painter.height));
+  }
+
+  /// Queue a bus marker to be added
+  void queueBusMarker({
+    required List<double> coordinates,
+    required String etaText,
+    required String routeName,
+    required Color routeColor,
+    double heading = 0.0,
+    String? vehicleId,
+    String occupancyLabel = '🚍',
+  }) {
+    _pendingBusMarkers.add(
+      BusMarkerData(
+        coordinates: coordinates,
+        etaText: etaText,
+        routeName: routeName,
+        routeColor: routeColor,
+        heading: heading,
+        vehicleId: vehicleId,
+        occupancyLabel: occupancyLabel,
+      ),
+    );
+  }
+
+  /// Flush all queued bus markers to the map
+  /// Uses a clean visual style: colored circle with bus icon
+  /// Text labels (ETA) are hidden for a cleaner map - info shown on tap instead
+  Future<void> flushBusMarkers() async {
+    debugPrint(
+      '🚌 flushBusMarkers called: ${_pendingBusMarkers.length} markers, manager=${_busAnnotationManager != null}',
+    );
+
+    if (_busAnnotationManager == null) {
+      debugPrint('❌ Bus annotation manager is null!');
+      return;
+    }
+
+    if (_pendingBusMarkers.isEmpty) {
+      debugPrint('⚠️ No pending bus markers to draw');
+      return;
+    }
+
+    // Clear the lookup map for fresh data
+    _busMarkerLookup.clear();
+
+    if (_map != null) {
+      // 1. Pre-register all necessary colored icons
+      for (final marker in _pendingBusMarkers) {
+        final colorValue = marker.routeColor.value;
+        // Unique ID per color AND route (since route text is baked in)
+        final iconId = 'bus-icon-$colorValue-${marker.routeName}';
+        final uniqueKey = iconId.hashCode;
+
+        if (!_registeredBusColors.contains(uniqueKey)) {
+          try {
+            final iconBytes = await _generateBusIcon(
+              marker.routeColor,
+              marker.routeName,
+            );
+
+            await _map!.style.addStyleImage(
+              iconId,
+              1.0, // Scale
+              MbxImage(width: 32, height: 32, data: iconBytes),
+              false, // sdf
+              [], // stretchX
+              [], // stretchY
+              null, // content
+            );
+
+            _registeredBusColors.add(uniqueKey);
+            debugPrint("🎨 Registered new bus icon: $iconId");
+          } catch (e) {
+            debugPrint("❌ Failed to register bus icon for $iconId: $e");
+          }
+        }
+      }
+    }
+
+    final options = _pendingBusMarkers.map((marker) {
+      final colorValue = marker.routeColor.value;
+      final iconId = 'bus-icon-$colorValue-${marker.routeName}';
+
+      // Store marker data for tap lookup
+      if (marker.vehicleId != null) {
+        _busMarkerLookup[marker.vehicleId!] = marker;
+      }
+
+      return PointAnnotationOptions(
+        geometry: Point(
+          coordinates: Position(marker.coordinates[0], marker.coordinates[1]),
+        ),
+
+        // ICON CONFIGURATION
+        iconImage: iconId,
+        iconSize: 1.0,
+        iconOpacity: 1.0,
+        iconAnchor: IconAnchor.CENTER, // Center for circular icon
+        iconOffset: [0, 0],
+        iconRotate: marker.heading,
+
+        // TEXT LABEL: ETA Visual (Clean setup)
+        // Only show ETA text if needed, floating above
+        textField: marker.etaText,
+        textSize: 11.0,
+        textColor: Colors.black.value,
+        textHaloColor: Colors.white.value,
+        textHaloWidth: 3.0,
+        // Position above the circle
+        textOffset: [0, -3.0],
+        textAnchor: TextAnchor.BOTTOM,
+      );
+    }).toList();
+
+    await _busAnnotationManager!.createMulti(options);
+    _pendingBusMarkers.clear();
+  }
+
+  /// Clear all bus markers
+  Future<void> clearBusMarkers() async {
+    _pendingBusMarkers.clear();
+    _busMarkerLookup.clear();
+    await _busAnnotationManager?.deleteAll();
+    // note: we do not clear _registeredBusColors as style images persist
+  }
+
+  /// Get bus marker data by vehicle ID (for tap handling)
+  BusMarkerData? getBusMarkerData(String vehicleId) {
+    return _busMarkerLookup[vehicleId];
+  }
+
+  /// Handle potential tap on bus marker
+  /// Call this with coordinates from a map tap event
+  /// Returns the vehicleId if a bus was tapped, null otherwise
+  String? checkBusTap(double tapLat, double tapLng, {double tolerance = 50.0}) {
+    for (final entry in _busMarkerLookup.entries) {
+      final marker = entry.value;
+      final markerLat = marker.coordinates[1];
+      final markerLng = marker.coordinates[0];
+
+      // Simple distance check (in meters, roughly)
+      final latDiff = (tapLat - markerLat).abs() * 111000;
+      final lngDiff =
+          (tapLng - markerLng).abs() * 111000 * cos(tapLat * pi / 180);
+      final distance = sqrt(latDiff * latDiff + lngDiff * lngDiff);
+
+      if (distance <= tolerance) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
   /// Clear all navigation-related layers.
   Future<void> clearNavigationLayers() async {
     if (_map == null) return;
@@ -309,22 +572,49 @@ class MapDrawingService {
     }
   }
 
-  /// Fly camera to show both user and destination.
+  /// Fly camera to show both user, destination, and optionally a bus.
   void fitCameraToTrip({
     required double userLat,
     required double userLng,
     required double destLat,
     required double destLng,
+    List<double>? extraPoint, // [lng, lat]
   }) {
+    // Calculate bounds manually since CameraForCoordinates calls can be complex
+    double minLat = min(userLat, destLat);
+    double maxLat = max(userLat, destLat);
+    double minLng = min(userLng, destLng);
+    double maxLng = max(userLng, destLng);
+
+    if (extraPoint != null) {
+      minLat = min(minLat, extraPoint[1]);
+      maxLat = max(maxLat, extraPoint[1]);
+      minLng = min(minLng, extraPoint[0]);
+      maxLng = max(maxLng, extraPoint[0]);
+    }
+
+    final centerLat = (minLat + maxLat) / 2;
+    final centerLng = (minLng + maxLng) / 2;
+
+    // Dynamic zoom estimation
+    final delta = max(maxLat - minLat, maxLng - minLng);
+    double zoom = 12.0;
+    if (delta < 0.02)
+      zoom = 14.5;
+    else if (delta < 0.05)
+      zoom = 13.5;
+    else if (delta < 0.1)
+      zoom = 12.5;
+    else
+      zoom = 11.0;
+
+    // Shift center slightly down to account for bottom sheet
+    final shiftedLat = centerLat; // Can adjust if needed
+
     _map?.flyTo(
       CameraOptions(
-        center: Point(
-          coordinates: Position(
-            (userLng + destLng) / 2,
-            (userLat + destLat) / 2,
-          ),
-        ),
-        zoom: 12.0,
+        center: Point(coordinates: Position(centerLng, shiftedLat)),
+        zoom: zoom,
       ),
       MapAnimationOptions(duration: 1500),
     );

@@ -1,3 +1,4 @@
+// lib/screens/conductor/conductor_dashboard.dart
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -167,6 +168,7 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
   @override
   void dispose() {
     _clockTimer?.cancel();
+    _pulseController.dispose();
     super.dispose();
   }
 
@@ -640,6 +642,7 @@ class _TickPainter extends CustomPainter {
       oldDelegate.color != color;
 }
 
+// Clock hands painter
 class _HandsPainter extends CustomPainter {
   final DateTime now;
   final Color accent;
@@ -659,6 +662,7 @@ class _HandsPainter extends CustomPainter {
     final minAngle = (math.pi * 2) * (minutes / 60.0) - math.pi / 2;
     final hrAngle = (math.pi * 2) * (hours / 12.0) - math.pi / 2;
 
+    // Hour hand
     final hourPaint = Paint()
       ..color = Colors.black.withOpacity(0.88)
       ..strokeWidth = 5.5
@@ -670,6 +674,7 @@ class _HandsPainter extends CustomPainter {
     );
     canvas.drawLine(center, hourEnd, hourPaint);
 
+    // Minute hand
     final minutePaint = Paint()
       ..color = Colors.black.withOpacity(0.78)
       ..strokeWidth = 4
@@ -681,6 +686,7 @@ class _HandsPainter extends CustomPainter {
     );
     canvas.drawLine(center, minEnd, minutePaint);
 
+    // Second hand
     final secondPaint = Paint()
       ..color = accent
       ..strokeWidth = 2.4
@@ -729,3 +735,4 @@ class _HandsPainter extends CustomPainter {
   bool shouldRepaint(covariant _HandsPainter oldDelegate) =>
       oldDelegate.now.second != now.second || oldDelegate.accent != accent;
 }
+
