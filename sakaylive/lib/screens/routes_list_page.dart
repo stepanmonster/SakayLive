@@ -1,15 +1,17 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:sakaylive/data/jeepney_routes.dart';
+import 'package:provider/provider.dart';
+import 'package:sakaylive/viewmodels/map_view_model.dart';
 
 class RoutesListPage extends StatelessWidget {
   const RoutesListPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // We use a copy of the data so we don't mutate the global state permanently
-    // just by scrolling (though changing direction here is a nice preview).
-    final routes = localRoutesData;
+    // Access routes from MapViewModel via Provider
+    final viewModel = Provider.of<MapViewModel>(context);
+    final routes =
+        viewModel.displayList; // Uses cached routes from Firebase or fallback
 
     return Scaffold(
       backgroundColor: Colors.white,

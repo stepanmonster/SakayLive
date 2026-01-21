@@ -1,32 +1,30 @@
 import 'package:flutter/material.dart';
 import 'theme.dart';
-import 'app.dart';
 import 'landing_page2.dart';
 
 class LandingPage1 extends StatelessWidget {
   const LandingPage1({super.key});
 
-void _goToFeatures(BuildContext context) {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const LandingPage2()),
-    );
+  void _goToFeatures(BuildContext context) {
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const LandingPage2()));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: beige,
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisAlignment: MainAxisAlignment.center, // center main content
             children: [
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
 
-              // Logo row
+              // Logo row - matching map screen header style
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -34,7 +32,14 @@ void _goToFeatures(BuildContext context) {
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: kDarkNavy,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: kDarkNavy.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
                     child: const Icon(
                       Icons.directions_bus_filled_rounded,
@@ -47,155 +52,126 @@ void _goToFeatures(BuildContext context) {
                     'SakayLive',
                     style: TextStyle(
                       color: kDarkNavy,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
                     ),
                   ),
                 ],
               ),
 
-              const SizedBox(height: 150),
+              const Spacer(flex: 2),
 
-              // Hero text
-              const Text(
-                'Real-time bus locations,\narrival times, and capacity —before you ride',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: kDarkNavy,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  height: 1.4,
+              // Hero illustration area
+              Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 30,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.location_on_rounded,
+                  size: 64,
+                  color: kDarkNavy.withOpacity(0.8),
                 ),
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 40),
+
+              // Hero text
+              const Text(
+                'Real-time bus locations,\narrival times, and capacity',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: kDarkNavy,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  height: 1.3,
+                  letterSpacing: -0.5,
+                ),
+              ),
+
+              const SizedBox(height: 16),
 
               // Supporting paragraph
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 320),
-                child: const Text(
+                constraints: const BoxConstraints(maxWidth: 300),
+                child: Text(
                   'Know exactly when your bus arrives and how full it is. Make smarter commute decisions.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Color(0xFF8A8A8A),
+                    color: Colors.grey.shade600,
                     fontSize: 15,
-                    height: 1.5,
+                    height: 1.6,
                   ),
                 ),
               ),
 
-              const SizedBox(height: 100),
+              const Spacer(flex: 2),
 
-              // Get Started button in the centered content group
+              // Get Started button - matching map screen button style
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () => _goToFeatures(context),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: kDarkNavy,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 18),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    elevation: 4,
+                    elevation: 0,
+                    shadowColor: Colors.transparent,
                   ),
                   child: const Text(
                     'Get Started',
                     style: TextStyle(
-                      color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
+                      letterSpacing: 0.3,
                     ),
                   ),
                 ),
               ),
 
-              const Spacer(),
+              const SizedBox(height: 20),
 
-              // Trust badge pinned near bottom
-              Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEADFC7),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Icon(
-                      Icons.verified_rounded,
-                      size: 18,
-                      color: kDarkNavy,
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      'Trusted by 50k+ daily commuters',
-                      style: TextStyle(
-                        color: kDarkNavy,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
+              // Page indicator
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildDot(true),
+                  const SizedBox(width: 8),
+                  _buildDot(false),
+                  const SizedBox(width: 8),
+                  _buildDot(false),
+                ],
               ),
+
+              const SizedBox(height: 24),
             ],
           ),
         ),
       ),
     );
   }
-}
 
-      
-class _FeatureTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _FeatureTile({
-    required this.icon,
-    required this.label,
-    super.key,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 88,
-      padding: const EdgeInsets.symmetric(vertical: 14),
+  Widget _buildDot(bool isActive) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      width: isActive ? 24 : 8,
+      height: 8,
       decoration: BoxDecoration(
-        color: const Color(0xFFF2E6CF), // slightly darker beige tile
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            offset: const Offset(0, 4),
-            blurRadius: 8,
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            color: kDarkNavy,
-            size: 22,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: kDarkNavy,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
+        color: isActive ? kDarkNavy : Colors.grey.shade300,
+        borderRadius: BorderRadius.circular(4),
       ),
     );
   }

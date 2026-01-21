@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sakaylive/screens/theme.dart';
+import 'package:sakaylive/models/vehicle_position.dart';
+import 'package:sakaylive/widgets/live_bus_card.dart';
 
 class SakayBottomSheet extends StatelessWidget {
   final ScrollController scrollController;
@@ -15,6 +17,14 @@ class SakayBottomSheet extends StatelessWidget {
   final double bottomPadding;
   final String? selectedRouteNum;
 
+  // Live tracking props
+  final List<TrackedVehicle> trackedVehicles;
+  final bool isTrackingEnabled;
+  final bool showAllBuses;
+  final VoidCallback? onToggleTracking;
+  final VoidCallback? onViewAllBuses;
+  final VoidCallback? onToggleBusVisibility;
+
   const SakayBottomSheet({
     super.key,
     required this.scrollController,
@@ -29,7 +39,16 @@ class SakayBottomSheet extends StatelessWidget {
     this.buttonsHeight = 80.0,
     this.bottomPadding = 20.0,
     this.selectedRouteNum,
+    this.trackedVehicles = const [],
+    this.isTrackingEnabled = false,
+    this.showAllBuses = false,
+    this.onToggleTracking,
+    this.onViewAllBuses,
+    this.onToggleBusVisibility,
   });
+
+  // Check if we have vehicles to show
+  bool get hasVehicles => trackedVehicles.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -95,14 +114,17 @@ class SakayBottomSheet extends StatelessWidget {
                 borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
               ),
             ),
-            // --- SCROLLABLE LIST WITH NAV-BAR SAFE PADDING ---
+
+            // --- LIVE BUS TRACKING CARD (REMOVED - now accessed via map button) ---
+            const SliverToBoxAdapter(child: SizedBox.shrink()),
+
+            // --- SCROLLABLE LIST ---
             SliverPadding(
               padding: EdgeInsets.only(bottom: bottomPadding + 20),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate((context, index) {
                   final route = routes[index];
                   bool isFastest = false;
-                  bool isCheapest = false;
 
                   if (route['type'] == 'trip_option') {
                     final tripOptions = routes
@@ -113,11 +135,6 @@ class SakayBottomSheet extends StatelessWidget {
                         (r) => r['type'] == 'trip_option',
                       );
                       isFastest = index == firstTripIndex;
-
-                      final minRides = tripOptions
-                          .map((r) => r['rideCount'] as int? ?? 999)
-                          .reduce((a, b) => a < b ? a : b);
-                      isCheapest = (route['rideCount'] ?? 999) == minRides;
                     }
                   }
 
@@ -127,7 +144,6 @@ class SakayBottomSheet extends StatelessWidget {
                     onTap: () => onRouteSelected(route),
                     onSwap: () => onRouteSwap(route),
                     isFastest: isFastest,
-                    isCheapest: isCheapest,
                   );
                 }, childCount: routes.length),
               ),
@@ -137,7 +153,6 @@ class SakayBottomSheet extends StatelessWidget {
       ),
     );
   }
-
 
   // --- HELPER WIDGETS ---
 
@@ -242,16 +257,35 @@ class SakayBottomSheet extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _actionIcon(Icons.directions_bus, "Routes", onTap: onRoutesTap),
-          _actionIcon(Icons.home, "Home", onTap: () {}),
+          // Bus Visibility Toggle -> Now opens Live Bus List Modal
+          _actionIcon(
+            Icons.format_list_bulleted_rounded,
+            "Live List",
+            onTap: onViewAllBuses,
+            isActive: false, // No active state needed for modal trigger
+          ),
+
+          // Routes List (Original "Routes" behavior shifted or just secondary?)
+          // User said "bus button toggle bus visibility instead".
+          // If we want to keep access to routes list, maybe add it as a separate button?
+          // Or assume Search bar handles it.
+          // I'll keep just this one as requested but maybe add Routes as secondary if needed.
+          // Actually, let's keep "Saved" for now as it was.
           _actionIcon(Icons.star, "Saved", onTap: () {}),
         ],
       ),
     );
   }
 
-  Widget _actionIcon(IconData i, String l, {VoidCallback? onTap}) {
-    final bool isRoutes = l == "Routes";
+  Widget _actionIcon(
+    IconData i,
+    String l, {
+    VoidCallback? onTap,
+    bool isActive = false,
+  }) {
+    final bool isBuses = l == "Buses";
+    final bool isLive = l == "Live";
+    final bool highlighted = isBuses && isActive || (isLive && isActive);
     return Semantics(
       button: true,
       label: '$l button',
@@ -271,29 +305,32 @@ class SakayBottomSheet extends StatelessWidget {
                   width: 52,
                   height: 52,
                   decoration: BoxDecoration(
-                    gradient: isRoutes
-                        ? const LinearGradient(
-                            colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
+                    gradient: highlighted
+                        ? LinearGradient(
+                            colors: [
+                              const Color(0xFF3B82F6),
+                              const Color(0xFF2563EB),
+                            ],
                           )
                         : null,
-                    color: isRoutes ? null : Colors.white,
+                    color: highlighted ? null : Colors.white,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: isRoutes
+                        color: highlighted
                             ? const Color(0xFF3B82F6).withOpacity(0.3)
                             : Colors.black.withOpacity(0.06),
-                        blurRadius: isRoutes ? 12 : 8,
+                        blurRadius: highlighted ? 12 : 8,
                         offset: const Offset(0, 4),
                       ),
                     ],
-                    border: isRoutes
+                    border: highlighted
                         ? null
                         : Border.all(color: const Color(0xFFE5E7EB), width: 1),
                   ),
                   child: Icon(
                     i,
-                    color: isRoutes ? Colors.white : const Color(0xFF5C5C5C),
+                    color: highlighted ? Colors.white : const Color(0xFF5C5C5C),
                     size: 24,
                   ),
                 ),
@@ -302,8 +339,8 @@ class SakayBottomSheet extends StatelessWidget {
                   l,
                   style: TextStyle(
                     fontSize: 12,
-                    fontWeight: isRoutes ? FontWeight.w700 : FontWeight.w600,
-                    color: isRoutes
+                    fontWeight: highlighted ? FontWeight.w700 : FontWeight.w600,
+                    color: highlighted
                         ? const Color(0xFF2563EB)
                         : const Color(0xFF5C5C5C),
                     letterSpacing: 0.2,
@@ -325,7 +362,6 @@ class _RouteTile extends StatelessWidget {
   final VoidCallback onSwap;
   final bool isSelected;
   final bool isFastest;
-  final bool isCheapest;
 
   const _RouteTile({
     super.key,
@@ -334,7 +370,6 @@ class _RouteTile extends StatelessWidget {
     required this.onSwap,
     this.isSelected = false,
     this.isFastest = false,
-    this.isCheapest = false,
   });
 
   Color _getRouteColor(String c) {
@@ -673,24 +708,6 @@ class _RouteTile extends StatelessWidget {
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: Color(0xFFD97706),
-              ),
-            ),
-          ),
-        if (isCheapest && !isFastest)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFECFDF5), Color(0xFFA7F3D0)],
-              ),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Text(
-              '💰 Cheapest',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF059669),
               ),
             ),
           ),
