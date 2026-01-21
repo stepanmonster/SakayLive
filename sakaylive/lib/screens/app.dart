@@ -109,7 +109,7 @@ class AuthWrapper extends StatelessWidget {
         }
 
         // ✅ NEW PRIORITY: Admin > Conductor/Commuter both → MapScreen
-        if (authViewModel.isAdmin!) {
+        if (authViewModel.isAdmin == true) {
           return const AdminPage(); // Replace: AdminPanelScreen()
         }
 
