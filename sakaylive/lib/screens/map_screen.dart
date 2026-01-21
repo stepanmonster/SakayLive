@@ -11,11 +11,12 @@ import 'package:sakaylive/screens/conductor/conductor_dashboard.dart';
 import 'auth_gate.dart';
 import 'package:sakaylive/viewmodels/map_view_model.dart';
 import 'package:sakaylive/widgets/sakay_bottom_sheet.dart';
+import 'package:sakaylive/widgets/live_bus_card.dart';
+import 'package:sakaylive/models/vehicle_position.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:sakaylive/services/auth_service.dart';
 import 'package:sakaylive/viewmodels/auth_view_model.dart';
-import 'package:sakaylive/services/auth_service.dart';
 
 /// Map Screen - View layer following MVVM pattern.
 /// Only responsible for UI rendering and user interaction forwarding.
@@ -131,6 +132,23 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  /// Show modal with all tracked buses
+  void _showAllBusesModal(BuildContext context, MapViewModel viewModel) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _AllBusesModal(
+        vehicles: viewModel.trackedVehicles,
+        onBusTap: (vehicle) {
+          Navigator.pop(context);
+          // Fly to bus location
+          viewModel.flyToLocation(vehicle.position.lat, vehicle.position.lng);
+        },
+      ),
+    );
+  }
+
   void _handleItemSelection(Map<String, dynamic> item, MapViewModel viewModel) {
     if (item['type'] == 'trip_option') {
       viewModel.drawTripOnMap(item);
@@ -244,6 +262,32 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
 
+              // 🧪 TEST BUTTON: Start Ghost Bus
+              Positioned(
+                left: 16,
+                bottom: (screenHeight * midSize) + 20,
+                child: FloatingActionButton(
+                  heroTag: "ghost_bus_btn",
+                  backgroundColor: Colors.orange,
+                  mini: true,
+                  child: const Icon(Icons.directions_bus),
+                  onPressed: () {
+                    // 1. Start listening to see the bus
+                    viewModel.listenToLiveVehicles();
+
+                    // 2. Start driving the bus (simulate the driver)
+                    viewModel.startGhostBusSimulation();
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          "👻 Ghost Bus Started! Look for the Blue Icon.",
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
               // Profile/Login Button - ✅ Now uses FutureBuilder data
               Positioned(
                 top: 0,
@@ -392,7 +436,7 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
 
-              // Bottom Sheet - UNCHANGED
+              // Bottom Sheet - with Live Tracking
               DraggableScrollableSheet(
                 controller: _sheetController,
                 initialChildSize: minSize,
@@ -407,6 +451,20 @@ class _MapScreenState extends State<MapScreen> {
                     routes: viewModel.displayList,
                     selectedRouteNum: viewModel.selectedRouteNum,
                     bottomPadding: bottomPadding,
+                    // Live tracking props
+                    trackedVehicles: viewModel.trackedVehicles,
+                    isTrackingEnabled: viewModel.isTrackingEnabled,
+                    onToggleTracking: () {
+                      if (viewModel.isTrackingEnabled) {
+                        viewModel.stopVehicleTracking();
+                      } else {
+                        viewModel.startVehicleTracking();
+                      }
+                    },
+                    onViewAllBuses: () {
+                      // Show modal with all tracked buses
+                      _showAllBusesModal(context, viewModel);
+                    },
                     onRouteSelected: (item) =>
                         _handleItemSelection(item, viewModel),
                     onRouteSwap: (item) {
@@ -522,6 +580,90 @@ class _MapScreenState extends State<MapScreen> {
                     icon: Icons.help_outline_rounded,
                     label: 'Help & Support',
                     onTap: () {},
+                  ),
+                  const Divider(height: 24),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Text(
+                      '🧪 Debug Tools',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF9CA3AF),
+                      ),
+                    ),
+                  ),
+                  _buildDrawerItem(
+                    icon: Icons.add_location_alt_rounded,
+                    label: 'Add Fake Buses',
+                    onTap: () {
+                      Navigator.pop(context);
+                      final viewModel = Provider.of<MapViewModel>(
+                        context,
+                        listen: false,
+                      );
+                      viewModel.addFakeBuses(count: 5);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('🚌 Added 5 fake buses!'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerItem(
+                    icon: Icons.play_circle_rounded,
+                    label: 'Start Moving Buses',
+                    onTap: () {
+                      Navigator.pop(context);
+                      final viewModel = Provider.of<MapViewModel>(
+                        context,
+                        listen: false,
+                      );
+                      viewModel.startMovingFakeBuses();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('🚌 Started moving buses!'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerItem(
+                    icon: Icons.stop_circle_rounded,
+                    label: 'Stop Moving Buses',
+                    onTap: () {
+                      Navigator.pop(context);
+                      final viewModel = Provider.of<MapViewModel>(
+                        context,
+                        listen: false,
+                      );
+                      viewModel.stopMovingFakeBuses();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('🛑 Stopped moving buses'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerItem(
+                    icon: Icons.delete_sweep_rounded,
+                    label: 'Clear All Buses',
+                    onTap: () {
+                      Navigator.pop(context);
+                      final viewModel = Provider.of<MapViewModel>(
+                        context,
+                        listen: false,
+                      );
+                      viewModel.clearFakeBuses();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('🧹 Cleared all fake buses'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -897,6 +1039,145 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Modal showing all tracked buses
+class _AllBusesModal extends StatelessWidget {
+  final List<TrackedVehicle> vehicles;
+  final Function(TrackedVehicle) onBusTap;
+
+  const _AllBusesModal({required this.vehicles, required this.onBusTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE5E7EB),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          // Header
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3B82F6).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.directions_bus_rounded,
+                    color: Color(0xFF3B82F6),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Live Buses Nearby',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                      Text(
+                        '${vehicles.length} active ${vehicles.length == 1 ? 'bus' : 'buses'}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF6B7280),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: Color(0xFF9CA3AF),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Divider(height: 1, color: Color(0xFFF3F4F6)),
+
+          // Bus list
+          Flexible(
+            child: vehicles.isEmpty
+                ? _buildEmptyState()
+                : ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    shrinkWrap: true,
+                    itemCount: vehicles.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final vehicle = vehicles[index];
+                      return LiveBusCard(
+                        vehicle: vehicle,
+                        onTap: () => onBusTap(vehicle),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return const Padding(
+      padding: EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.directions_bus_outlined,
+            size: 64,
+            color: Color(0xFFE5E7EB),
+          ),
+          SizedBox(height: 16),
+          Text(
+            'No buses online',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            'Buses will appear here when they start tracking',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+          ),
+        ],
       ),
     );
   }

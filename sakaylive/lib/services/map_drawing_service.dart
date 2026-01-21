@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:sakaylive/services/directions_service.dart';
+import 'dart:ui' as ui;
 
 /// Represents a marker to be added to the map.
 class MarkerData {
@@ -18,13 +20,35 @@ class MarkerData {
   });
 }
 
+/// Represents a bus marker with additional styling info.
+class BusMarkerData {
+  final List<double> coordinates;
+  final String etaText;
+  final String routeName;
+  final Color routeColor;
+  final double heading;
+
+  BusMarkerData({
+    required this.coordinates,
+    required this.etaText,
+    required this.routeName,
+    required this.routeColor,
+    required this.heading,
+  });
+}
+
 /// Service responsible for drawing routes and markers on the Mapbox map.
 class MapDrawingService {
   MapboxMap? _map;
   PointAnnotationManager? _annotationManager;
+  PointAnnotationManager? _busAnnotationManager;
+
+  // Cache of registered bus icon colors to avoid re-generating the same icons
+  final Set<int> _registeredBusColors = {};
 
   /// Pending markers to be added in batch.
   final List<MarkerData> _pendingMarkers = [];
+  final List<BusMarkerData> _pendingBusMarkers = [];
 
   bool get isInitialized => _map != null && _annotationManager != null;
 
@@ -35,6 +59,8 @@ class MapDrawingService {
   Future<void> initAnnotationManager() async {
     if (_map == null) return;
     _annotationManager = await _map!.annotations.createPointAnnotationManager();
+    _busAnnotationManager = await _map!.annotations
+        .createPointAnnotationManager();
   }
 
   PointAnnotationManager? get annotationManager => _annotationManager;
@@ -216,6 +242,144 @@ class MapDrawingService {
   Future<void> clearMarkers() async {
     _pendingMarkers.clear();
     await _annotationManager?.deleteAll();
+  }
+
+  // =========================================================
+  // BUS MARKER METHODS
+  // =========================================================
+
+  /// Generate a bus icon image with the specified color
+  Future<Uint8List> _generateBusIcon(Color color) async {
+    const double size = 80;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    // Draw circle background
+    final bgPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2 - 4, bgPaint);
+
+    // Draw white border
+    final borderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4;
+    canvas.drawCircle(
+      const Offset(size / 2, size / 2),
+      size / 2 - 4,
+      borderPaint,
+    );
+
+    // Draw bus emoji/icon as text
+    final textPainter = TextPainter(
+      text: const TextSpan(text: '🚌', style: TextStyle(fontSize: 36)),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset((size - textPainter.width) / 2, (size - textPainter.height) / 2),
+    );
+
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
+  }
+
+  /// Queue a bus marker to be added
+  void queueBusMarker({
+    required List<double> coordinates,
+    required String etaText,
+    required String routeName,
+    required Color routeColor,
+    double heading = 0.0,
+  }) {
+    _pendingBusMarkers.add(
+      BusMarkerData(
+        coordinates: coordinates,
+        etaText: etaText,
+        routeName: routeName,
+        routeColor: routeColor,
+        heading: heading,
+      ),
+    );
+  }
+
+  /// Flush all queued bus markers to the map
+  Future<void> flushBusMarkers() async {
+    if (_busAnnotationManager == null || _pendingBusMarkers.isEmpty) return;
+
+    if (_map != null) {
+      // 1. Pre-register all necessary colored icons
+      for (final marker in _pendingBusMarkers) {
+        final colorValue = marker.routeColor.value;
+        if (!_registeredBusColors.contains(colorValue)) {
+          try {
+            final iconId = 'bus-icon-$colorValue';
+            final iconBytes = await _generateBusIcon(marker.routeColor);
+
+            await _map!.style.addStyleImage(
+              iconId,
+              1.0, // Scale
+              MbxImage(width: 80, height: 80, data: iconBytes),
+              false, // sdf
+              [], // stretchX
+              [], // stretchY
+              null, // content
+            );
+
+            _registeredBusColors.add(colorValue);
+            debugPrint("🎨 Registered new bus icon: $iconId");
+          } catch (e) {
+            debugPrint(
+              "❌ Failed to register bus icon for color $colorValue: $e",
+            );
+          }
+        }
+      }
+    }
+
+    final options = _pendingBusMarkers.map((marker) {
+      final colorValue = marker.routeColor.value;
+
+      return PointAnnotationOptions(
+        geometry: Point(
+          coordinates: Position(marker.coordinates[0], marker.coordinates[1]),
+        ),
+
+        // ICON CONFIGURATION
+        iconImage: 'bus-icon-$colorValue',
+        iconSize: 0.6, // Smaller size (original was 80px)
+        iconOpacity: 1.0,
+        iconAnchor: IconAnchor.CENTER, // Center the bus on the actual location
+        // iconRotate: marker.heading, // Option to rotate if desired
+
+        // TEXT LABELS (ETA)
+        textField: marker.etaText,
+        textSize: 12.0,
+        textOffset: [
+          0,
+          2.0,
+        ], // Position text below the icon (approx 2 ems down)
+        textAnchor: TextAnchor.CENTER,
+        textColor: Colors.black.value,
+        textHaloColor: Colors.white.value,
+        textHaloWidth: 2.0,
+        textHaloBlur: 1.0,
+      );
+    }).toList();
+
+    await _busAnnotationManager!.createMulti(options);
+    _pendingBusMarkers.clear();
+  }
+
+  /// Clear all bus markers
+  Future<void> clearBusMarkers() async {
+    _pendingBusMarkers.clear();
+    await _busAnnotationManager?.deleteAll();
+    // note: we do not clear _registeredBusColors as style images persist
   }
 
   /// Clear all navigation-related layers.

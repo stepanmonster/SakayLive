@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sakaylive/screens/theme.dart';
+import 'package:sakaylive/models/vehicle_position.dart';
+import 'package:sakaylive/widgets/live_bus_card.dart';
 
 class SakayBottomSheet extends StatelessWidget {
   final ScrollController scrollController;
@@ -15,6 +17,12 @@ class SakayBottomSheet extends StatelessWidget {
   final double bottomPadding;
   final String? selectedRouteNum;
 
+  // Live tracking props
+  final List<TrackedVehicle> trackedVehicles;
+  final bool isTrackingEnabled;
+  final VoidCallback? onToggleTracking;
+  final VoidCallback? onViewAllBuses;
+
   const SakayBottomSheet({
     super.key,
     required this.scrollController,
@@ -29,7 +37,14 @@ class SakayBottomSheet extends StatelessWidget {
     this.buttonsHeight = 80.0,
     this.bottomPadding = 20.0,
     this.selectedRouteNum,
+    this.trackedVehicles = const [],
+    this.isTrackingEnabled = false,
+    this.onToggleTracking,
+    this.onViewAllBuses,
   });
+
+  // Check if we have vehicles to show
+  bool get hasVehicles => trackedVehicles.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -102,6 +117,24 @@ class SakayBottomSheet extends StatelessWidget {
 
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+            ),
+
+            // --- LIVE BUS TRACKING CARD (if enabled) ---
+            SliverToBoxAdapter(
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                child: isTrackingEnabled
+                    ? Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: LiveBusSummary(
+                          key: const ValueKey('live_bus_summary'),
+                          vehicles: trackedVehicles,
+                          onViewAll: onViewAllBuses,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
             ),
 
@@ -255,15 +288,29 @@ class SakayBottomSheet extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           _actionIcon(Icons.directions_bus, "Routes", onTap: onRoutesTap),
-          _actionIcon(Icons.home, "Home", onTap: () {}),
+          _actionIcon(
+            isTrackingEnabled ? Icons.gps_fixed : Icons.gps_not_fixed,
+            isTrackingEnabled
+                ? (hasVehicles ? "Live (${trackedVehicles.length})" : "Live")
+                : "Live",
+            onTap: onToggleTracking,
+            isActive: isTrackingEnabled,
+          ),
           _actionIcon(Icons.star, "Saved", onTap: () {}),
         ],
       ),
     );
   }
 
-  Widget _actionIcon(IconData i, String l, {VoidCallback? onTap}) {
+  Widget _actionIcon(
+    IconData i,
+    String l, {
+    VoidCallback? onTap,
+    bool isActive = false,
+  }) {
     final bool isRoutes = l == "Routes";
+    final bool isLive = l == "Live";
+    final bool highlighted = isRoutes || (isLive && isActive);
     return Semantics(
       button: true,
       label: '$l button',
@@ -283,29 +330,39 @@ class SakayBottomSheet extends StatelessWidget {
                   width: 52,
                   height: 52,
                   decoration: BoxDecoration(
-                    gradient: isRoutes
-                        ? const LinearGradient(
-                            colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
+                    gradient: highlighted
+                        ? LinearGradient(
+                            colors: isLive
+                                ? [
+                                    const Color(0xFF22C55E),
+                                    const Color(0xFF16A34A),
+                                  ]
+                                : [
+                                    const Color(0xFF3B82F6),
+                                    const Color(0xFF2563EB),
+                                  ],
                           )
                         : null,
-                    color: isRoutes ? null : Colors.white,
+                    color: highlighted ? null : Colors.white,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: isRoutes
-                            ? const Color(0xFF3B82F6).withOpacity(0.3)
+                        color: highlighted
+                            ? (isLive
+                                  ? const Color(0xFF22C55E).withOpacity(0.3)
+                                  : const Color(0xFF3B82F6).withOpacity(0.3))
                             : Colors.black.withOpacity(0.06),
-                        blurRadius: isRoutes ? 12 : 8,
+                        blurRadius: highlighted ? 12 : 8,
                         offset: const Offset(0, 4),
                       ),
                     ],
-                    border: isRoutes
+                    border: highlighted
                         ? null
                         : Border.all(color: const Color(0xFFE5E7EB), width: 1),
                   ),
                   child: Icon(
                     i,
-                    color: isRoutes ? Colors.white : const Color(0xFF5C5C5C),
+                    color: highlighted ? Colors.white : const Color(0xFF5C5C5C),
                     size: 24,
                   ),
                 ),
@@ -314,9 +371,11 @@ class SakayBottomSheet extends StatelessWidget {
                   l,
                   style: TextStyle(
                     fontSize: 12,
-                    fontWeight: isRoutes ? FontWeight.w700 : FontWeight.w600,
-                    color: isRoutes
-                        ? const Color(0xFF2563EB)
+                    fontWeight: highlighted ? FontWeight.w700 : FontWeight.w600,
+                    color: highlighted
+                        ? (isLive
+                              ? const Color(0xFF16A34A)
+                              : const Color(0xFF2563EB))
                         : const Color(0xFF5C5C5C),
                     letterSpacing: 0.2,
                   ),
