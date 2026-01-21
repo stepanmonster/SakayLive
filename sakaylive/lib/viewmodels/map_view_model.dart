@@ -13,6 +13,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:sakaylive/services/auth_service.dart';
+import 'package:flutter/services.dart'; // for rootBundle
 
 /// ViewModel for the Map Screen following MVVM pattern.
 /// Contains all business logic and state management.
@@ -42,6 +43,7 @@ class MapViewModel extends ChangeNotifier {
   geo.Position? _userLocation;
   Point? _destinationPoint;
   String? _selectedRouteNum;
+  String? _currentRouteWithLandmarks; // Track which route has landmarks displayed
   String _searchText = '';
   List<Map<String, dynamic>> _cachedRoutes = []; // 🔥 FIREBASE ROUTES
   List<Map<String, dynamic>> _displayList = [];
@@ -497,78 +499,114 @@ class MapViewModel extends ChangeNotifier {
   }
 
   /// 🔥 UPDATED: Select route with Firebase GeoJSON or local assets
-  Future<void> selectRoute(Map<String, dynamic> route) async {
-    _selectedRouteNum = route['num'];
-    _destinationPoint = null;
-    _activeTripStats = null; // Clear trip stats when selecting a route
-    notifyListeners();
+  /// 🔥 UPDATED: Select route with Firebase GeoJSON or local assets + landmarks
+Future<void> selectRoute(Map<String, dynamic> route) async {
+  _selectedRouteNum = route['num'];
+  _destinationPoint = null;
+  _activeTripStats = null; // Clear trip stats when selecting a route
+  notifyListeners();
 
-    await _mapDrawingService.clearNavigationLayers();
-    await _mapDrawingService.clearMarkers();
+  await _mapDrawingService.clearNavigationLayers();
+  await _mapDrawingService.clearMarkers();
 
-    try {
-      int dir = route['activeDir'] ?? 0;
-      final directionData = route['directions'][dir];
+  try {
+    int dir = route['activeDir'] ?? 0;
+    final directionData = route['directions'][dir];
+    Map<String, dynamic>? geoJsonData;
 
-      // Check if it's a Firebase path or local asset
-      if (directionData.containsKey('path')) {
-        // Firebase path
-        String dbPath = directionData['path'];
-        final geoJsonData = await loadGeoJson(dbPath);
-        if (geoJsonData != null) {
-          await _mapDrawingService.drawGeoJsonRoute(
-            geoJsonData: geoJsonData,
-            colorName: route['color'],
-          );
-        }
-      } else if (directionData.containsKey('asset')) {
-        // Local asset path
-        String assetPath = directionData['asset'];
-        await _mapDrawingService.drawRouteFromAsset(
-          assetPath: assetPath,
+    // Check if it's a Firebase path or local asset
+    if (directionData.containsKey('path')) {
+      // Firebase path
+      String dbPath = directionData['path'];
+      geoJsonData = await loadGeoJson(dbPath);
+      if (geoJsonData != null) {
+        await _mapDrawingService.drawGeoJsonRoute(
+          geoJsonData: geoJsonData,
           colorName: route['color'],
         );
+        
+        // ✅ ADD LANDMARK LETTERS
+        final landmarks = _extractLandmarks(geoJsonData);
+        if (landmarks.isNotEmpty) {
+          final routeId = route['num']?.toString() ?? 'unknown';
+          await _addLandmarkLettersWithLayers(routeId, landmarks);
+        }
       }
-
-      debugPrint("✅ Route ${route['num']} drawn successfully");
-    } catch (e) {
-      debugPrint("Select route error: $e");
-    }
-
-    // Redraw user location marker (it uses a separate layer so it's preserved)
-    if (_userLocation != null) {
-      await _mapDrawingService.drawUserLocationMarker(
-        lat: _userLocation!.latitude,
-        lng: _userLocation!.longitude,
+    } else if (directionData.containsKey('asset')) {
+      // Local asset path
+      String assetPath = directionData['asset'];
+      
+      // First draw the route
+      await _mapDrawingService.drawRouteFromAsset(
+        assetPath: assetPath,
+        colorName: route['color'],
       );
+      
+      // ✅ Load GeoJSON from asset to get landmarks
+      try {
+        // Import flutter/services.dart for rootBundle
+        final String geoJsonString = await rootBundle.loadString(assetPath);
+        geoJsonData = jsonDecode(geoJsonString) as Map<String, dynamic>;
+        
+        final landmarks = _extractLandmarks(geoJsonData);
+        if (landmarks.isNotEmpty) {
+          final routeId = route['num']?.toString() ?? 'unknown';
+          await _addLandmarkLettersWithLayers(routeId, landmarks);
+        }
+      } catch (e) {
+        debugPrint('Could not load landmarks from asset: $e');
+      }
     }
 
-    _mapDrawingService.flyTo(lat: 10.7202, lng: 122.5644, zoom: 13.0);
+    debugPrint("✅ Route ${route['num']} drawn successfully");
+  } catch (e) {
+    debugPrint("Select route error: $e");
   }
+
+  // Redraw user location marker (it uses a separate layer so it's preserved)
+  if (_userLocation != null) {
+    await _mapDrawingService.drawUserLocationMarker(
+      lat: _userLocation!.latitude,
+      lng: _userLocation!.longitude,
+    );
+  }
+
+  _mapDrawingService.flyTo(lat: 10.7202, lng: 122.5644, zoom: 13.0);
+}
 
   /// Swap route direction.
-  void swapRouteDirection(Map<String, dynamic> route) {
-    int currentDir = route['activeDir'] ?? 0;
-    route['activeDir'] = (currentDir + 1) % route['directions'].length;
+  /// Swap route direction.
+Future<void> swapRouteDirection(Map<String, dynamic> route) async {
+  int currentDir = route['activeDir'] ?? 0;
+  route['activeDir'] = (currentDir + 1) % route['directions'].length;
 
-    // Update cached route too
-    final cachedIndex = _cachedRoutes.indexWhere(
-      (r) => r['num'] == route['num'],
-    );
-    if (cachedIndex != -1) {
-      _cachedRoutes[cachedIndex]['activeDir'] = route['activeDir'];
-    }
-
-    notifyListeners();
+  // Update cached route too
+  final cachedIndex = _cachedRoutes.indexWhere(
+    (r) => r['num'] == route['num'],
+  );
+  if (cachedIndex != -1) {
+    _cachedRoutes[cachedIndex]['activeDir'] = route['activeDir'];
   }
 
+  // ✅ If this route is currently selected, redraw it with new direction
+  if (_selectedRouteNum == route['num']) {
+    await selectRoute(route);
+  }
+
+  notifyListeners();
+}
+
+  /// Clear all selections and reset to default state.
   /// Clear all selections and reset to default state.
   Future<void> clearSelection() async {
+    // ✅ CLEAR LANDMARKS FIRST
+    await _clearLandmarkLayers();
+    
     _searchText = '';
     _selectedRouteNum = null;
     _destinationPoint = null;
     _activeTripStats = null;
-    _displayList = List.from(_cachedRoutes); // 🔥 CHANGED
+    _displayList = List.from(_cachedRoutes);
 
     await _mapDrawingService.clearNavigationLayers();
     await _mapDrawingService.clearMarkers();
@@ -695,4 +733,168 @@ class MapViewModel extends ChangeNotifier {
   }
 
   double _toRadians(double deg) => deg * math.pi / 180;
+
+  List<Map<String, dynamic>> _extractLandmarks(Map<String, dynamic> geoJsonData) {
+  if (geoJsonData['features'] == null) return [];
+  
+  final features = geoJsonData['features'] as List;
+  List<Map<String, dynamic>> landmarks = [];
+  
+  for (var feature in features) {
+    if (feature['geometry']['type'] == 'Point') {
+      final coords = feature['geometry']['coordinates'];
+      landmarks.add({
+        'name': feature['properties']['name'] ?? 'Unnamed',
+        'coordinates': [coords[0], coords[1]],
+      });
+    }
+  }
+  
+  return landmarks;
+}
+
+/// Add letter markers to landmarks
+/// Add start and end markers to landmarks
+/// Add start and end markers to landmarks
+  /// Add start and end markers to landmarks
+Future<void> _addLandmarkLettersWithLayers(
+  String routeId, 
+  List<Map<String, dynamic>> landmarks
+) async {
+  if (_map == null || landmarks.isEmpty) return;
+  
+  try {
+    // Clear previous layers if they exist
+    await _clearLandmarkLayers();
+    
+    // Create separate sources for start and end
+    final startLandmark = landmarks.first;
+    final endLandmark = landmarks.last;
+    
+    // Start marker GeoJSON
+    final startGeoJson = {
+      'type': 'FeatureCollection',
+      'features': [{
+        'type': 'Feature',
+        'geometry': {
+          'type': 'Point',
+          'coordinates': startLandmark['coordinates'],
+        },
+        'properties': {
+          'label': 'Start',
+          'name': startLandmark['name'],
+        }
+      }]
+    };
+    
+    // End marker GeoJSON
+    final endGeoJson = {
+      'type': 'FeatureCollection',
+      'features': [{
+        'type': 'Feature',
+        'geometry': {
+          'type': 'Point',
+          'coordinates': endLandmark['coordinates'],
+        },
+        'properties': {
+          'label': 'End',
+          'name': endLandmark['name'],
+        }
+      }]
+    };
+    
+    // Add start source and layers
+    await _map!.style.addSource(
+      GeoJsonSource(
+        id: 'start-source',
+        data: jsonEncode(startGeoJson),
+      ),
+    );
+    
+    await _map!.style.addLayer(
+      CircleLayer(
+        id: 'start-circle',
+        sourceId: 'start-source',
+      )..circleRadius = 18.0
+       ..circleColor = Colors.green.value
+       ..circleStrokeWidth = 3.0
+       ..circleStrokeColor = Colors.white.value,
+    );
+    
+    await _map!.style.addLayer(
+      SymbolLayer(
+        id: 'start-text',
+        sourceId: 'start-source',
+      )..textField = "{label}"
+       ..textSize = 12.0
+       ..textColor = Colors.white.value
+       ..textHaloColor = Colors.black.value
+       ..textHaloWidth = 1.0
+       ..textAllowOverlap = true
+       ..textIgnorePlacement = true,
+    );
+    
+    // Add end source and layers
+    await _map!.style.addSource(
+      GeoJsonSource(
+        id: 'end-source',
+        data: jsonEncode(endGeoJson),
+      ),
+    );
+    
+    await _map!.style.addLayer(
+      CircleLayer(
+        id: 'end-circle',
+        sourceId: 'end-source',
+      )..circleRadius = 18.0
+       ..circleColor = Colors.red.value
+       ..circleStrokeWidth = 3.0
+       ..circleStrokeColor = Colors.white.value,
+    );
+    
+    await _map!.style.addLayer(
+      SymbolLayer(
+        id: 'end-text',
+        sourceId: 'end-source',
+      )..textField = "{label}"
+       ..textSize = 12.0
+       ..textColor = Colors.white.value
+       ..textHaloColor = Colors.black.value
+       ..textHaloWidth = 1.0
+       ..textAllowOverlap = true
+       ..textIgnorePlacement = true,
+    );
+    
+    _currentRouteWithLandmarks = routeId;
+    debugPrint('✅ Added Start and End markers for route $routeId');
+    
+  } catch (e) {
+    debugPrint('❌ Error adding landmark layers: $e');
+  }
+}
+
+/// Clear landmark layers
+/// Clear landmark layers
+  /// Clear landmark layers
+Future<void> _clearLandmarkLayers() async {
+  if (_map == null || _currentRouteWithLandmarks == null) return;
+  
+  try {
+    // Remove start layers and source
+    await _map!.style.removeStyleLayer('start-text');
+    await _map!.style.removeStyleLayer('start-circle');
+    await _map!.style.removeStyleSource('start-source');
+    
+    // Remove end layers and source
+    await _map!.style.removeStyleLayer('end-text');
+    await _map!.style.removeStyleLayer('end-circle');
+    await _map!.style.removeStyleSource('end-source');
+    
+    _currentRouteWithLandmarks = null;
+    debugPrint('✅ Cleared landmark layers');
+  } catch (e) {
+    // Layers might not exist yet, that's okay
+    debugPrint('Note: Landmark layers may not exist yet');
+  }
+}
 }

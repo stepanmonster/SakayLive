@@ -62,6 +62,7 @@ class _MapScreenState extends State<MapScreen> {
     viewModel.fetchUserLocation();
   }
 
+
   void _openSearchPage(MapViewModel viewModel) async {
     final result = await Navigator.push(
       context,
@@ -393,6 +394,7 @@ class _MapScreenState extends State<MapScreen> {
                 ),
 
               // Bottom Sheet - UNCHANGED
+              
               DraggableScrollableSheet(
   controller: _sheetController,
   initialChildSize: minSize,
@@ -410,9 +412,9 @@ class _MapScreenState extends State<MapScreen> {
       onRouteSelected: (item) => _handleItemSelection(item, viewModel),
       onRouteSwap: (item) {
         if (item['type'] == 'route') {
-          viewModel.swapRouteDirection(item);
+          viewModel.swapRouteDirection(item);  // This should trigger the redraw now
           if (viewModel.selectedRouteNum == item['num']) {
-            viewModel.selectRoute(item);
+            viewModel.selectRoute(item);  // Or you can keep this if you prefer
           }
         }
       },
@@ -604,7 +606,7 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
   }
-
+  
   Widget _buildDrawerItem({
     required IconData icon,
     required String label,
