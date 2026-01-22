@@ -237,11 +237,11 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
     final m = dt.minute.toString().padLeft(2, '0');
     switch (s) {
       case BusStatus.green:
-        return "It’s $h:$m — plenty of seats 🚍✨";
+        return "It’s $h:$m — SEATS AVAILABLE";
       case BusStatus.yellow:
-        return "It’s $h:$m — standing ok 😅";
+        return "It’s $h:$m — STANDING ONLY";
       case BusStatus.red:
-        return "It’s $h:$m — full house 🔴";
+        return "It’s $h:$m — BUSS FULL";
     }
   }
 
