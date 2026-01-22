@@ -1,7 +1,13 @@
+// SECTION 1/2 — ConductorDashboard + Trip persistence + DB-powered bus dropdown
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+// ✅ DB bus list + model
+import 'package:sakaylive/models/vehicle_position.dart';
+import 'package:sakaylive/services/bus_rtdb_service.dart';
 
 enum BusStatus { green, yellow, red }
 
@@ -75,11 +81,15 @@ class TripStateController {
 
     session.value = TripSession(
       isActive: active,
-      startedAt: startedAtMs == null ? null : DateTime.fromMillisecondsSinceEpoch(startedAtMs),
+      startedAt: startedAtMs == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(startedAtMs),
       busId: busId,
     );
 
-    if (statusIndex != null && statusIndex >= 0 && statusIndex < BusStatus.values.length) {
+    if (statusIndex != null &&
+        statusIndex >= 0 &&
+        statusIndex < BusStatus.values.length) {
       status.value = BusStatus.values[statusIndex];
     }
 
@@ -98,7 +108,10 @@ class TripStateController {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kTripActive, true);
-    await prefs.setInt(_kTripStartedAt, newSession.startedAt!.millisecondsSinceEpoch);
+    await prefs.setInt(
+      _kTripStartedAt,
+      newSession.startedAt!.millisecondsSinceEpoch,
+    );
     await prefs.setString(_kTripBusId, busId);
   }
 
@@ -117,7 +130,10 @@ class TripStateController {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_kStatusIndex, newStatus.index);
-    await prefs.setInt(_kLastUpdatedAt, lastUpdated.value!.millisecondsSinceEpoch);
+    await prefs.setInt(
+      _kLastUpdatedAt,
+      lastUpdated.value!.millisecondsSinceEpoch,
+    );
   }
 }
 
@@ -129,8 +145,14 @@ class ConductorDashboard extends StatefulWidget {
 }
 
 class _ConductorDashboardState extends State<ConductorDashboard> {
-  final List<String> buses = ["E-Bus 01", "E-Bus 02", "E-Bus 03"];
-  String selectedBus = "E-Bus 01";
+  // ✅ RTDB service
+  final BusRtdbService _busService = BusRtdbService();
+
+  // ✅ Persist "last selected bus" even when trip is not active
+  static const _kSelectedBusId = "selected_bus_id";
+
+  // ✅ Selected bus is now the RTDB vehicle key (VehiclePosition.id)
+  String? selectedBusId;
 
   // Clock tick + trip timer tick
   late DateTime _now;
@@ -155,13 +177,18 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
     await TripStateController.instance.init();
     if (!mounted) return;
 
-    // If trip was active, restore selected bus for dropdown convenience
+    final prefs = await SharedPreferences.getInstance();
     final trip = TripStateController.instance.session.value;
-    if (trip.busId != null && buses.contains(trip.busId)) {
-      selectedBus = trip.busId!;
-    }
+
+    // If trip was active, prefer the trip bus id; otherwise, remember last selection.
+    selectedBusId = trip.busId ?? prefs.getString(_kSelectedBusId);
 
     setState(() => _loading = false);
+  }
+
+  Future<void> _saveSelectedBusId(String busId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kSelectedBusId, busId);
   }
 
   @override
@@ -210,7 +237,16 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
 
   Future<void> _toggleTrip(bool isActive) async {
     if (!isActive) {
-      await TripStateController.instance.startTrip(busId: selectedBus);
+      if (selectedBusId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Please select a bus first."),
+            duration: Duration(milliseconds: 900),
+          ),
+        );
+        return;
+      }
+      await TripStateController.instance.startTrip(busId: selectedBusId!);
     } else {
       await TripStateController.instance.endTrip();
     }
@@ -227,9 +263,16 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
 
   Future<void> _setStatus(BusStatus newStatus, bool tripActive) async {
     if (!tripActive) return;
+
     await TripStateController.instance.setBusStatus(newStatus);
 
-    // TODO: Send to backend later
+    // ✅ Also push occupancy to RTDB so passengers see it
+    if (selectedBusId != null) {
+      await _busService.setOccupancy(
+        vehicleId: selectedBusId!,
+        occupancy: newStatus.name, // "green" | "yellow" | "red"
+      );
+    }
   }
 
   String _playfulCaption(DateTime dt, BusStatus s) {
@@ -288,18 +331,26 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                                 child: ElevatedButton.icon(
                                   onPressed: () => _toggleTrip(tripActive),
                                   icon: Icon(
-                                    tripActive ? Icons.stop_circle : Icons.play_circle_fill,
+                                    tripActive
+                                        ? Icons.stop_circle
+                                        : Icons.play_circle_fill,
                                     size: 22,
                                   ),
                                   label: Text(
                                     tripActive ? "End Trip" : "Start Trip",
-                                    style: const TextStyle(fontWeight: FontWeight.w900),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
                                   ),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: tripActive ? Colors.black : Colors.indigoAccent,
+                                    backgroundColor: tripActive
+                                        ? Colors.black
+                                        : Colors.indigoAccent,
                                     foregroundColor: Colors.white,
                                     elevation: 3,
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14),
                                     ),
@@ -308,7 +359,10 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                               ),
                               const SizedBox(width: 12),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.grey.shade100,
                                   borderRadius: BorderRadius.circular(14),
@@ -328,11 +382,15 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                                       ),
                                     ),
                                     Text(
-                                      tripActive ? _tripDurationText(tripDuration) : "--:--",
+                                      tripActive
+                                          ? _tripDurationText(tripDuration)
+                                          : "--:--",
                                       style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w900,
-                                        color: tripActive ? Colors.black : Colors.grey,
+                                        color: tripActive
+                                            ? Colors.black
+                                            : Colors.grey,
                                       ),
                                     ),
                                   ],
@@ -342,29 +400,81 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                           ),
                           const SizedBox(height: 10),
 
-                          // Assigned bus
+                          // Assigned bus (DB powered)
                           const Text(
                             "Assigned Bus",
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 8),
-                          DropdownButtonFormField<String>(
-                            value: selectedBus,
-                            items: buses
-                                .map((b) => DropdownMenuItem(value: b, child: Text(b)))
-                                .toList(),
-                            onChanged: (v) {
-                              setState(() => selectedBus = v ?? selectedBus);
 
-                              // If trip is currently active, also persist busId switch (optional)
-                              if (TripStateController.instance.session.value.isActive) {
-                                TripStateController.instance.startTrip(busId: selectedBus);
+                          StreamBuilder<List<VehiclePosition>>(
+                            stream: _busService.watchVehicles(),
+                            builder: (context, snap) {
+                              if (snap.connectionState ==
+                                      ConnectionState.waiting &&
+                                  !snap.hasData) {
+                                return const SizedBox(
+                                  height: 56,
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
                               }
+
+                              final vehicles = snap.data ?? [];
+
+                              if (vehicles.isEmpty) {
+                                return const Text(
+                                  "No buses found in database.",
+                                  style: TextStyle(
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                );
+                              }
+
+                              final ids = vehicles.map((v) => v.id).toSet();
+
+                              // If current selection is missing/invalid, pick first
+                              if (selectedBusId == null ||
+                                  !ids.contains(selectedBusId)) {
+                                selectedBusId = vehicles.first.id;
+                                // Fire-and-forget persist
+                                _saveSelectedBusId(selectedBusId!);
+                              }
+
+                              return DropdownButtonFormField<String>(
+                                value: selectedBusId,
+                                items: vehicles.map((v) {
+                                  final label =
+                                      (v.plateNumber?.trim().isNotEmpty == true)
+                                          ? v.plateNumber!
+                                          : v.id;
+
+                                  return DropdownMenuItem(
+                                    value: v.id,
+                                    child: Text(label),
+                                  );
+                                }).toList(),
+
+                                // ✅ Recommended: disable switching while trip active
+                                onChanged: tripActive
+                                    ? null
+                                    : (busId) async {
+                                        if (busId == null) return;
+                                        setState(() => selectedBusId = busId);
+                                        await _saveSelectedBusId(busId);
+                                      },
+
+                                decoration: const InputDecoration(
+                                  border: OutlineInputBorder(),
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 14,
+                                  ),
+                                ),
+                              );
                             },
-                            decoration: const InputDecoration(
-                              border: OutlineInputBorder(),
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                            ),
                           ),
 
                           const SizedBox(height: 14),
@@ -416,10 +526,14 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                                             ),
                                           ),
 
-                                          CustomPaint(
-                                            size: const Size(260, 260),
-                                            painter: _TickPainter(
-                                              color: Colors.white.withOpacity(0.92),
+                                          // ✅ Clip so ticks never "explode" outside the circle
+                                          ClipOval(
+                                            child: CustomPaint(
+                                              size: const Size(260, 260),
+                                              painter: _TickPainter(
+                                                color: Colors.white
+                                                    .withOpacity(0.92),
+                                              ),
                                             ),
                                           ),
 
@@ -431,7 +545,8 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                                               color: Colors.white,
                                               boxShadow: [
                                                 BoxShadow(
-                                                  color: Colors.black.withOpacity(0.08),
+                                                  color: Colors.black
+                                                      .withOpacity(0.08),
                                                   blurRadius: 10,
                                                   offset: const Offset(0, 6),
                                                 ),
@@ -468,13 +583,15 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                                           Positioned(
                                             bottom: 16,
                                             child: Container(
-                                              padding: const EdgeInsets.symmetric(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
                                                 horizontal: 14,
                                                 vertical: 8,
                                               ),
                                               decoration: BoxDecoration(
                                                 color: ring.withOpacity(0.12),
-                                                borderRadius: BorderRadius.circular(999),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
                                                 border: Border.all(
                                                   color: ring.withOpacity(0.35),
                                                 ),
@@ -523,7 +640,10 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                             label: "Green — Seats Available",
                             color: Colors.green,
                             icon: Icons.event_seat,
-                            onTap: () => _setStatus(BusStatus.green, tripActive),
+                            onTap: () => _setStatus(
+                              BusStatus.green,
+                              tripActive,
+                            ),
                           ),
                           const SizedBox(height: 12),
                           _bigStatusButton(
@@ -531,7 +651,10 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                             label: "Yellow — Standing Only",
                             color: Colors.orange,
                             icon: Icons.directions_bus,
-                            onTap: () => _setStatus(BusStatus.yellow, tripActive),
+                            onTap: () => _setStatus(
+                              BusStatus.yellow,
+                              tripActive,
+                            ),
                           ),
                           const SizedBox(height: 12),
                           _bigStatusButton(
@@ -539,7 +662,10 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                             label: "Red — Full",
                             color: Colors.red,
                             icon: Icons.block,
-                            onTap: () => _setStatus(BusStatus.red, tripActive),
+                            onTap: () => _setStatus(
+                              BusStatus.red,
+                              tripActive,
+                            ),
                           ),
                         ],
                       ),
@@ -600,7 +726,7 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
     );
   }
 }
-
+// SECTION 2/2 — Painters (unchanged except kept compatible with Section 1)
 class _TickPainter extends CustomPainter {
   final Color color;
 
