@@ -35,6 +35,7 @@ class App extends StatelessWidget {
           '/map': (context) => const MapScreen(),
           '/login': (context) => const LoginPage(),
           '/conductor': (context) => const ConductorDashboard(),  // FAB/Drawer target
+          '/profile': (context) => const AccountPage(),
         },
       ),
     );
