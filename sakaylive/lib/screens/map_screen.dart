@@ -37,7 +37,7 @@ class _MapScreenState extends State<MapScreen> {
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
   final TextEditingController _searchController = TextEditingController();
-  List<Map<String, dynamic>> _cachedRoutes = [];
+  MapboxMap? _mapboxMap;
 
   @override
   void initState() {
@@ -54,6 +54,9 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _onMapCreated(MapboxMap map, MapViewModel viewModel) async {
+    _mapboxMap = map;
+    
+    // Existing settings
     map.location.updateSettings(
       LocationComponentSettings(enabled: true, pulsingEnabled: true),
     );
@@ -61,10 +64,45 @@ class _MapScreenState extends State<MapScreen> {
     map.attribution.updateSettings(
       AttributionSettings(marginBottom: 150, marginLeft: 100),
     );
+    
+    // NEW: Position compass below Login button (top-right)
+    _positionCompassBelowButtons(map);
+
+    _positionScaleBarBelowMenu(map);
 
     await viewModel.initialize(map); // Wait for completion
-    print("✅ MapViewModel fully initialized"); // Debug
     viewModel.fetchUserLocation();
+  }
+
+  void _positionCompassBelowButtons(MapboxMap mapboxMap) {
+    // Calculate position below your top-right Login button
+    // SafeArea top padding + 16px padding + ~56px button height + 12px gap
+    const double topPadding = 44.0 + 56.0; // iOS status bar + your layout
+    
+    mapboxMap.compass.updateSettings(
+      CompassSettings(
+        enabled: true,
+        position: OrnamentPosition.TOP_RIGHT,
+        marginTop: topPadding,
+        marginRight: 16.0,  // Match your button's right padding
+        marginLeft: 0,
+        marginBottom: 0,
+      ),
+    );
+  }
+
+  void _positionScaleBarBelowMenu(MapboxMap mapboxMap) {
+    // Menu button: SafeArea(top) + Padding(16) + button height(~48-56px) + small gap
+    const double marginTop = 44.0 + 16.0 + 56.0 + 8.0;  // ~124px from top, left side
+    
+    mapboxMap.scaleBar.updateSettings(
+      ScaleBarSettings(
+        enabled: true,
+        position: OrnamentPosition.TOP_LEFT,
+        marginTop: marginTop,
+        marginLeft: 16.0,  // Align with your menu button padding
+      ),
+    );
   }
 
   void _openSearchPage(MapViewModel viewModel) async {
