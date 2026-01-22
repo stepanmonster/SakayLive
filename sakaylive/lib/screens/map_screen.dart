@@ -21,6 +21,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:sakaylive/viewmodels/auth_view_model.dart';
 import 'package:sakaylive/utils/haptics.dart';
 import 'package:sakaylive/utils/toast_helper.dart';
+import 'package:sakaylive/screens/account_page.dart';
 
 /// Map Screen - View layer following MVVM pattern.
 /// Only responsible for UI rendering and user interaction forwarding.
