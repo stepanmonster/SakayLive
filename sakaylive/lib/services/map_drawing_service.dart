@@ -234,7 +234,8 @@ class MapDrawingService {
         ),
         textField: marker.label,
         textSize: 14.0,
-        textOffset: [0, 0],
+        textAnchor: TextAnchor.TOP,
+        textOffset: [0, 1.5],
         textColor: marker.textColor.value,
         textHaloColor: Colors.white.value,
         textHaloWidth: 3.0,
@@ -711,3 +712,4 @@ class MapDrawingService {
     }
   }
 }
+
