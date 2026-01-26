@@ -55,7 +55,7 @@ class _MapScreenState extends State<MapScreen> {
 
   void _onMapCreated(MapboxMap map, MapViewModel viewModel) async {
     _mapboxMap = map;
-    
+
     // Existing settings
     map.location.updateSettings(
       LocationComponentSettings(enabled: true, pulsingEnabled: true),
@@ -64,7 +64,7 @@ class _MapScreenState extends State<MapScreen> {
     map.attribution.updateSettings(
       AttributionSettings(marginBottom: 150, marginLeft: 100),
     );
-    
+
     // NEW: Position compass below Login button (top-right)
     _positionCompassBelowButtons(map);
 
@@ -78,13 +78,13 @@ class _MapScreenState extends State<MapScreen> {
     // Calculate position below your top-right Login button
     // SafeArea top padding + 16px padding + ~56px button height + 12px gap
     const double topPadding = 44.0 + 56.0; // iOS status bar + your layout
-    
+
     mapboxMap.compass.updateSettings(
       CompassSettings(
         enabled: true,
         position: OrnamentPosition.TOP_RIGHT,
         marginTop: topPadding,
-        marginRight: 16.0,  // Match your button's right padding
+        marginRight: 16.0, // Match your button's right padding
         marginLeft: 0,
         marginBottom: 0,
       ),
@@ -93,14 +93,15 @@ class _MapScreenState extends State<MapScreen> {
 
   void _positionScaleBarBelowMenu(MapboxMap mapboxMap) {
     // Menu button: SafeArea(top) + Padding(16) + button height(~48-56px) + small gap
-    const double marginTop = 44.0 + 16.0 + 56.0 + 8.0;  // ~124px from top, left side
-    
+    const double marginTop =
+        44.0 + 16.0 + 56.0 + 8.0; // ~124px from top, left side
+
     mapboxMap.scaleBar.updateSettings(
       ScaleBarSettings(
         enabled: true,
         position: OrnamentPosition.TOP_LEFT,
         marginTop: marginTop,
-        marginLeft: 16.0,  // Align with your menu button padding
+        marginLeft: 16.0, // Align with your menu button padding
       ),
     );
   }
@@ -581,15 +582,12 @@ class _MapScreenState extends State<MapScreen> {
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 children: [
-                  _buildDrawerItem(
-                    icon: Icons.confirmation_num_rounded,
-                    label: 'Transit Passes',
-                    onTap: () {},
-                  ),
+                  // Conductor Panel - Always visible for conductors
                   if (isConductor)
                     _buildDrawerItem(
                       icon: Icons.admin_panel_settings_rounded,
                       label: 'Conductor Panel',
+                      isHighlighted: true,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(
@@ -734,6 +732,8 @@ class _MapScreenState extends State<MapScreen> {
                       );
                     },
                   ),
+                  const Divider(height: 16),
+                  // Location Mode Toggle
                 ],
               ),
             ),
@@ -816,7 +816,7 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
   }
-  
+
   Widget _buildDrawerItem({
     required IconData icon,
     required String label,
