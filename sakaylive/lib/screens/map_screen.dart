@@ -55,7 +55,7 @@ class _MapScreenState extends State<MapScreen> {
 
   void _onMapCreated(MapboxMap map, MapViewModel viewModel) async {
     _mapboxMap = map;
-    
+
     // Existing settings
     map.location.updateSettings(
       LocationComponentSettings(enabled: true, pulsingEnabled: true),
@@ -64,7 +64,7 @@ class _MapScreenState extends State<MapScreen> {
     map.attribution.updateSettings(
       AttributionSettings(marginBottom: 150, marginLeft: 100),
     );
-    
+
     // NEW: Position compass below Login button (top-right)
     _positionCompassBelowButtons(map);
 
@@ -78,13 +78,13 @@ class _MapScreenState extends State<MapScreen> {
     // Calculate position below your top-right Login button
     // SafeArea top padding + 16px padding + ~56px button height + 12px gap
     const double topPadding = 44.0 + 56.0; // iOS status bar + your layout
-    
+
     mapboxMap.compass.updateSettings(
       CompassSettings(
         enabled: true,
         position: OrnamentPosition.TOP_RIGHT,
         marginTop: topPadding,
-        marginRight: 16.0,  // Match your button's right padding
+        marginRight: 16.0, // Match your button's right padding
         marginLeft: 0,
         marginBottom: 0,
       ),
@@ -93,14 +93,15 @@ class _MapScreenState extends State<MapScreen> {
 
   void _positionScaleBarBelowMenu(MapboxMap mapboxMap) {
     // Menu button: SafeArea(top) + Padding(16) + button height(~48-56px) + small gap
-    const double marginTop = 44.0 + 16.0 + 56.0 + 8.0;  // ~124px from top, left side
-    
+    const double marginTop =
+        44.0 + 16.0 + 56.0 + 8.0; // ~124px from top, left side
+
     mapboxMap.scaleBar.updateSettings(
       ScaleBarSettings(
         enabled: true,
         position: OrnamentPosition.TOP_LEFT,
         marginTop: marginTop,
-        marginLeft: 16.0,  // Align with your menu button padding
+        marginLeft: 16.0, // Align with your menu button padding
       ),
     );
   }
@@ -581,15 +582,12 @@ class _MapScreenState extends State<MapScreen> {
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 children: [
-                  _buildDrawerItem(
-                    icon: Icons.confirmation_num_rounded,
-                    label: 'Transit Passes',
-                    onTap: () {},
-                  ),
+                  // Conductor Panel - Always visible for conductors
                   if (isConductor)
                     _buildDrawerItem(
                       icon: Icons.admin_panel_settings_rounded,
                       label: 'Conductor Panel',
+                      isHighlighted: true,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(
@@ -734,6 +732,9 @@ class _MapScreenState extends State<MapScreen> {
                       );
                     },
                   ),
+                  const Divider(height: 16),
+                  // Location Mode Toggle
+                  _buildLocationModeToggle(context),
                 ],
               ),
             ),
@@ -816,7 +817,7 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
   }
-  
+
   Widget _buildDrawerItem({
     required IconData icon,
     required String label,
@@ -862,6 +863,100 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Location Mode Toggle - switches between Demo Mode and Live Location
+  Widget _buildLocationModeToggle(BuildContext context) {
+    final viewModel = Provider.of<MapViewModel>(context);
+    final isDemoMode = viewModel.useDemoMode;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDemoMode
+            ? const Color(0xFFFEF3C7) // Amber-100 for demo
+            : const Color(0xFFDCFCE7), // Green-100 for live
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDemoMode
+              ? const Color(0xFFFCD34D) // Amber-300
+              : const Color(0xFF86EFAC), // Green-300
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isDemoMode ? Icons.science_rounded : Icons.gps_fixed_rounded,
+            color: isDemoMode
+                ? const Color(0xFFD97706) // Amber-600
+                : const Color(0xFF16A34A), // Green-600
+            size: 22,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isDemoMode ? 'Demo Mode' : 'Live Location',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: isDemoMode
+                        ? const Color(0xFFB45309) // Amber-700
+                        : const Color(0xFF15803D), // Green-700
+                  ),
+                ),
+                Text(
+                  isDemoMode
+                      ? 'Using simulated location'
+                      : 'Using real GPS location',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDemoMode
+                        ? const Color(0xFF92400E) // Amber-800
+                        : const Color(0xFF166534), // Green-800
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: !isDemoMode, // Switch ON = Live, OFF = Demo
+            onChanged: (value) {
+              viewModel.setDemoMode(!value);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      Icon(
+                        value ? Icons.gps_fixed_rounded : Icons.science_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        value
+                            ? 'Switched to Live Location mode'
+                            : 'Switched to Demo mode',
+                      ),
+                    ],
+                  ),
+                  backgroundColor: value
+                      ? const Color(0xFF22C55E)
+                      : const Color(0xFFF59E0B),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            },
+            activeColor: const Color(0xFF22C55E),
+            inactiveThumbColor: const Color(0xFFF59E0B),
+            inactiveTrackColor: const Color(0xFFFCD34D),
+          ),
+        ],
       ),
     );
   }
