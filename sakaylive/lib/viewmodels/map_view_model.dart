@@ -39,10 +39,17 @@ class MapViewModel extends ChangeNotifier {
   // --- MOCK LOCATION FOR TESTING ---
   // Set to true to use fake location instead of real GPS
   // In production, set this to false to use real GPS
-  static const bool useMockLocation = true;
+  bool _useDemoMode = true; // Mutable - can be toggled at runtime
   // PHV6+497, Quintin Salas St, Jaro, Iloilo City, 5000 Iloilo
   static const double mockLatitude = 10.7244;
   static const double mockLongitude = 122.5575;
+
+  // Getter and setter for demo mode
+  bool get useDemoMode => _useDemoMode;
+  void setDemoMode(bool value) {
+    _useDemoMode = value;
+    notifyListeners();
+  }
 
   // --- BUS DATA MODE ---
   // Set to true to use mock/simulated buses, false for real conductor data only
@@ -725,9 +732,22 @@ class MapViewModel extends ChangeNotifier {
 
   /// 🧹 CLEAR ALL FAKE BUSES
   Future<void> clearFakeBuses() async {
+    // First stop all timers
+    stopMovingFakeBuses();
+
     try {
+      // Remove from Firebase
       await _database.ref('vehicles').remove();
       debugPrint("🧹 Cleared all vehicles from Firebase");
+
+      // Clear local tracked vehicles list
+      _trackedVehicles.clear();
+      _tappedVehicle = null;
+
+      // Clear bus markers from the map
+      await _mapDrawingService.clearBusMarkers();
+
+      notifyListeners();
     } catch (e) {
       debugPrint("🔥 Error clearing vehicles: $e");
     }
@@ -816,11 +836,18 @@ class MapViewModel extends ChangeNotifier {
   }
 
   void stopMovingFakeBuses() {
+    // Stop the moving bus timers
     for (var timer in _busTimers) {
       timer.cancel();
     }
     _busTimers.clear();
-    debugPrint("🛑 Stopped all moving buses");
+
+    // Also stop the fake bus timer from addFakeBuses
+    _fakeBusTimer?.cancel();
+    _fakeBusTimer = null;
+    _fakeBusState.clear();
+
+    debugPrint("🛑 Stopped all moving buses and fake bus simulations");
   }
 
   /// 🔥 NEW: Load routes from Firebase
@@ -943,9 +970,9 @@ class MapViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      if (useMockLocation) {
+      if (_useDemoMode) {
         // 🧪 MOCK LOCATION: PHV6+497, Quintin Salas St, Jaro, Iloilo City
-        debugPrint("🧪 Using MOCK location: $mockLatitude, $mockLongitude");
+        debugPrint("🧪 Using DEMO location: $mockLatitude, $mockLongitude");
         _userLocation = geo.Position(
           latitude: mockLatitude,
           longitude: mockLongitude,

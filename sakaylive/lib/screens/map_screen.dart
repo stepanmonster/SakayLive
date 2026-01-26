@@ -866,6 +866,100 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  /// Location Mode Toggle - switches between Demo Mode and Live Location
+  Widget _buildLocationModeToggle(BuildContext context) {
+    final viewModel = Provider.of<MapViewModel>(context);
+    final isDemoMode = viewModel.useDemoMode;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDemoMode
+            ? const Color(0xFFFEF3C7) // Amber-100 for demo
+            : const Color(0xFFDCFCE7), // Green-100 for live
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDemoMode
+              ? const Color(0xFFFCD34D) // Amber-300
+              : const Color(0xFF86EFAC), // Green-300
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isDemoMode ? Icons.science_rounded : Icons.gps_fixed_rounded,
+            color: isDemoMode
+                ? const Color(0xFFD97706) // Amber-600
+                : const Color(0xFF16A34A), // Green-600
+            size: 22,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isDemoMode ? 'Demo Mode' : 'Live Location',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: isDemoMode
+                        ? const Color(0xFFB45309) // Amber-700
+                        : const Color(0xFF15803D), // Green-700
+                  ),
+                ),
+                Text(
+                  isDemoMode
+                      ? 'Using simulated location'
+                      : 'Using real GPS location',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDemoMode
+                        ? const Color(0xFF92400E) // Amber-800
+                        : const Color(0xFF166534), // Green-800
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: !isDemoMode, // Switch ON = Live, OFF = Demo
+            onChanged: (value) {
+              viewModel.setDemoMode(!value);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      Icon(
+                        value ? Icons.gps_fixed_rounded : Icons.science_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        value
+                            ? 'Switched to Live Location mode'
+                            : 'Switched to Demo mode',
+                      ),
+                    ],
+                  ),
+                  backgroundColor: value
+                      ? const Color(0xFF22C55E)
+                      : const Color(0xFFF59E0B),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            },
+            activeColor: const Color(0xFF22C55E),
+            inactiveThumbColor: const Color(0xFFF59E0B),
+            inactiveTrackColor: const Color(0xFFFCD34D),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Build a minimal trip stats chip - only shows when trip is active
   Widget _buildStatsPopover(MapViewModel viewModel) {
     final tripStats = viewModel.activeTripStats;
