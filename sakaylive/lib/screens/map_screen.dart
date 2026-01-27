@@ -620,120 +620,122 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                     ),
                   ),
-                  _buildDrawerItem(
-                    icon: Icons.add_location_alt_rounded,
-                    label: 'Add Fake Buses',
-                    onTap: () {
-                      Navigator.pop(context);
-                      final viewModel = Provider.of<MapViewModel>(
-                        context,
-                        listen: false,
-                      );
-                      viewModel.addFakeBuses(count: 5);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Row(
-                            children: [
-                              Icon(
-                                Icons.directions_bus_filled_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                              SizedBox(width: 10),
-                              Text('Added 5 fake buses!'),
-                            ],
-                          ),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDrawerItem(
-                    icon: Icons.play_circle_rounded,
-                    label: 'Start Moving Buses',
-                    onTap: () {
-                      Navigator.pop(context);
-                      final viewModel = Provider.of<MapViewModel>(
-                        context,
-                        listen: false,
-                      );
-                      viewModel.startMovingFakeBuses();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Row(
-                            children: [
-                              Icon(
-                                Icons.play_circle_filled_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                              SizedBox(width: 10),
-                              Text('Started moving buses!'),
-                            ],
-                          ),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDrawerItem(
-                    icon: Icons.stop_circle_rounded,
-                    label: 'Stop Moving Buses',
-                    onTap: () {
-                      Navigator.pop(context);
-                      final viewModel = Provider.of<MapViewModel>(
-                        context,
-                        listen: false,
-                      );
-                      viewModel.stopMovingFakeBuses();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Row(
-                            children: [
-                              Icon(
-                                Icons.stop_circle_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                              SizedBox(width: 10),
-                              Text('Stopped moving buses'),
-                            ],
-                          ),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildDrawerItem(
-                    icon: Icons.delete_sweep_rounded,
-                    label: 'Clear All Buses',
-                    onTap: () {
-                      Navigator.pop(context);
-                      final viewModel = Provider.of<MapViewModel>(
-                        context,
-                        listen: false,
-                      );
-                      viewModel.clearFakeBuses();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Row(
-                            children: [
-                              Icon(
-                                Icons.cleaning_services_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                              SizedBox(width: 10),
-                              Text('Cleared all fake buses'),
-                            ],
-                          ),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
+                  Builder(
+                    builder: (context) {
+                      final viewModel = Provider.of<MapViewModel>(context);
+                      if (viewModel.useDemoMode) {
+                        return Column(
+                          children: [
+                            _buildDrawerItem(
+                              icon: Icons.add_location_alt_rounded,
+                              label: 'Add Fake Buses',
+                              onTap: () {
+                                Navigator.pop(context);
+                                viewModel.addFakeBuses(count: 5);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Row(
+                                      children: [
+                                        Icon(
+                                          Icons.directions_bus_filled_rounded,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                        SizedBox(width: 10),
+                                        Text('Added 5 fake buses!'),
+                                      ],
+                                    ),
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                            ),
+                            _buildDrawerItem(
+                              icon: Icons.play_circle_rounded,
+                              label: 'Start Moving Buses',
+                              onTap: () {
+                                Navigator.pop(context);
+                                viewModel.startMovingFakeBuses();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Row(
+                                      children: [
+                                        Icon(
+                                          Icons.play_circle_filled_rounded,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                        SizedBox(width: 10),
+                                        Text('Started moving buses!'),
+                                      ],
+                                    ),
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                            ),
+                            _buildDrawerItem(
+                              icon: Icons.stop_circle_rounded,
+                              label: 'Stop Moving Buses',
+                              onTap: () {
+                                Navigator.pop(context);
+                                viewModel.stopMovingFakeBuses();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Row(
+                                      children: [
+                                        Icon(
+                                          Icons.stop_circle_rounded,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                        SizedBox(width: 10),
+                                        Text('Stopped moving buses'),
+                                      ],
+                                    ),
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                            ),
+                            _buildDrawerItem(
+                              icon: Icons.delete_sweep_rounded,
+                              label: 'Clear All Buses',
+                              onTap: () {
+                                Navigator.pop(context);
+                                viewModel.clearFakeBuses();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Row(
+                                      children: [
+                                        Icon(
+                                          Icons.cleaning_services_rounded,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                        SizedBox(width: 10),
+                                        Text('Cleared all fake buses'),
+                                      ],
+                                    ),
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        );
+                      } else {
+                        return _buildDrawerItem(
+                          icon: Icons.directions_bus_filled_rounded,
+                          label: 'Bus simulation only in Demo Mode',
+                          onTap: () {},
+                        );
+                      }
                     },
                   ),
                   const Divider(height: 16),
                   // Location Mode Toggle
+                  _buildLocationModeToggle(context),
                 ],
               ),
             ),
@@ -890,12 +892,13 @@ class _MapScreenState extends State<MapScreen> {
           Icon(
             isDemoMode ? Icons.science_rounded : Icons.gps_fixed_rounded,
             color: isDemoMode
-                ? const Color(0xFFD97706) // Amber-600
-                : const Color(0xFF16A34A), // Green-600
+                ? const Color(0xFFD97706)
+                : const Color(0xFF16A34A),
             size: 22,
           ),
           const SizedBox(width: 12),
-          Expanded(
+          Flexible(
+            fit: FlexFit.tight,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -905,9 +908,10 @@ class _MapScreenState extends State<MapScreen> {
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: isDemoMode
-                        ? const Color(0xFFB45309) // Amber-700
-                        : const Color(0xFF15803D), // Green-700
+                        ? const Color(0xFFB45309)
+                        : const Color(0xFF15803D),
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
                 Text(
                   isDemoMode
@@ -916,44 +920,52 @@ class _MapScreenState extends State<MapScreen> {
                   style: TextStyle(
                     fontSize: 11,
                     color: isDemoMode
-                        ? const Color(0xFF92400E) // Amber-800
-                        : const Color(0xFF166534), // Green-800
+                        ? const Color(0xFF92400E)
+                        : const Color(0xFF166534),
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          Switch(
-            value: !isDemoMode, // Switch ON = Live, OFF = Demo
-            onChanged: (value) {
-              viewModel.setDemoMode(!value);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Row(
-                    children: [
-                      Icon(
-                        value ? Icons.gps_fixed_rounded : Icons.science_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        value
-                            ? 'Switched to Live Location mode'
-                            : 'Switched to Demo mode',
-                      ),
-                    ],
+          Flexible(
+            fit: FlexFit.loose,
+            child: Switch(
+              value: !isDemoMode,
+              onChanged: (value) async {
+                viewModel.setDemoMode(!value);
+                viewModel.clearUserLocation();
+                await viewModel.fetchUserLocation();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(
+                          value
+                              ? Icons.gps_fixed_rounded
+                              : Icons.science_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          value
+                              ? 'Switched to Live Location mode'
+                              : 'Switched to Demo mode',
+                        ),
+                      ],
+                    ),
+                    backgroundColor: value
+                        ? const Color(0xFF22C55E)
+                        : const Color(0xFFF59E0B),
+                    duration: const Duration(seconds: 2),
                   ),
-                  backgroundColor: value
-                      ? const Color(0xFF22C55E)
-                      : const Color(0xFFF59E0B),
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            },
-            activeColor: const Color(0xFF22C55E),
-            inactiveThumbColor: const Color(0xFFF59E0B),
-            inactiveTrackColor: const Color(0xFFFCD34D),
+                );
+              },
+              activeColor: const Color(0xFF22C55E),
+              inactiveThumbColor: const Color(0xFFF59E0B),
+              inactiveTrackColor: const Color(0xFFFCD34D),
+            ),
           ),
         ],
       ),
