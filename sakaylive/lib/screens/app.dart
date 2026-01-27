@@ -26,7 +26,7 @@ class App extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: ThemeData(fontFamily: 'Poppins'),
 
-        home: const AppEntryPoint(), // Onboarding + Role-based entry
+        home: const AuthWrapper(),
         initialRoute: null,
 
         // ALL existing routes preserved ✅
@@ -34,61 +34,12 @@ class App extends StatelessWidget {
           '/landing': (context) => const LandingPage1(),
           '/map': (context) => const MapScreen(),
           '/login': (context) => const LoginPage(),
-          '/conductor': (context) => const ConductorDashboard(),  // FAB/Drawer target
+          '/conductor': (context) =>
+              const ConductorDashboard(), // FAB/Drawer target
           '/profile': (context) => const AccountPage(),
         },
       ),
     );
-  }
-}
-
-/// Entry point that checks onboarding status first
-class AppEntryPoint extends StatefulWidget {
-  const AppEntryPoint({super.key});
-
-  @override
-  State<AppEntryPoint> createState() => _AppEntryPointState();
-}
-
-class _AppEntryPointState extends State<AppEntryPoint> {
-  bool _isLoading = true;
-  bool _showOnboarding = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkOnboarding();
-  }
-
-  Future<void> _checkOnboarding() async {
-    final completed = await OnboardingScreen.isCompleted();
-    setState(() {
-      _showOnboarding = !completed;
-      _isLoading = false;
-    });
-  }
-
-  void _onOnboardingComplete() {
-    setState(() {
-      _showOnboarding = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF22C55E)),
-        ),
-      );
-    }
-
-    if (_showOnboarding) {
-      return OnboardingScreen(onComplete: _onOnboardingComplete);
-    }
-
-    return const AuthWrapper();
   }
 }
 

@@ -23,6 +23,12 @@ import 'package:sakaylive/models/vehicle_position.dart';
 /// ViewModel for the Map Screen following MVVM pattern.
 /// Contains all business logic and state management.
 class MapViewModel extends ChangeNotifier {
+  /// Clear the cached user location (for mode switching)
+  void clearUserLocation() {
+    _userLocation = null;
+    notifyListeners();
+  }
+
   // --- SERVICES ---
   final RouteService _routeService = RouteService();
   final MapDrawingService _mapDrawingService = MapDrawingService();
@@ -758,33 +764,25 @@ class MapViewModel extends ChangeNotifier {
   List<Timer> _busTimers = [];
 
   void startMovingFakeBuses() {
-    if (!_routeService.isLoaded) {
-      debugPrint("❌ Routes not loaded!");
+    if (_fakeBusState.isEmpty) {
+      debugPrint("❌ No fake buses to move! Add fake buses first.");
       return;
     }
 
     // Stop any existing timers
     stopMovingFakeBuses();
 
-    final routes = _routeService.cachedRoutes;
     final random = math.Random();
 
-    // Create 3-5 moving buses on different routes
-    final busCount = 3 + random.nextInt(3);
-
-    for (int i = 0; i < busCount; i++) {
-      final route = routes[random.nextInt(routes.length)];
-      final coords = route.coordinates;
-
-      if (coords.length < 10) continue;
-
-      int currentIndex = random.nextInt(
-        coords.length ~/ 2,
-      ); // Start in first half
-      final busId = "moving_bus_${route.routeNum}_$i";
+    for (final entry in _fakeBusState.entries) {
+      final busId = entry.key;
+      final state = entry.value;
+      final coords = state['coords'] as List<List<double>>;
+      int currentIndex = (state['currentIndex'] as num).toInt();
       final speed = 800 + random.nextInt(700); // 800-1500ms per update
 
       final timer = Timer.periodic(Duration(milliseconds: speed), (t) async {
+        if (coords.isEmpty) return;
         if (currentIndex >= coords.length - 1) {
           currentIndex = 0; // Loop back
         }
@@ -792,11 +790,8 @@ class MapViewModel extends ChangeNotifier {
         final point = coords[currentIndex];
 
         // Randomize occupancy for testing moving buses too
-        String occupancy = "green";
+        String occupancy = state['occupancy'] ?? "green";
         int roll = random.nextInt(100);
-        // Slightly different logic for moving: change occasionally?
-        // For now just random per tick is fine but might flash.
-        // Better: static per bus. Let's base it on busId hash.
         int seed = busId.hashCode + currentIndex;
         if (seed % 100 > 85) {
           occupancy = "red";
@@ -806,7 +801,7 @@ class MapViewModel extends ChangeNotifier {
 
         final vehicle = VehiclePosition(
           id: busId,
-          routeId: route.routeNum,
+          routeId: state['routeNum'],
           lat: point[1],
           lng: point[0],
           heading: 0,
@@ -816,8 +811,9 @@ class MapViewModel extends ChangeNotifier {
               : (occupancy == 'yellow')
               ? 20
               : 10,
-          plateNumber: "MOV ${1000 + i}",
+          plateNumber: state['plateNumber'],
           occupancy: occupancy,
+          directionIndex: state['directionIndex'] ?? 0,
         );
 
         try {
@@ -826,13 +822,17 @@ class MapViewModel extends ChangeNotifier {
           debugPrint("🔥 Error updating moving bus: $e");
         }
 
-        currentIndex += 2; // Move 2 points per tick for visible movement
+        int moveSpeed = (state['speed'] ?? 1) is int
+            ? state['speed'] as int
+            : (state['speed'] as num).toInt();
+        currentIndex += moveSpeed;
+        state['currentIndex'] = currentIndex;
       });
 
       _busTimers.add(timer);
     }
 
-    debugPrint("🚌 Started ${_busTimers.length} moving buses!");
+    debugPrint("🚌 Started ${_busTimers.length} moving fake buses!");
   }
 
   void stopMovingFakeBuses() {
