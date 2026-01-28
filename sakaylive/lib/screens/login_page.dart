@@ -47,17 +47,6 @@ class _LoginPageState extends State<LoginPage> {
 
       if (!mounted) return;
 
-      final isConductor = authViewModel.isConductor ?? false;
-
-      if (!isConductor) {
-        // Sign out non-conductor users
-        await authViewModel.signOut();
-        _showError(
-          'Only conductors can log in. Please register as a conductor.',
-        );
-        return;
-      }
-
       Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     } else if (authViewModel.errorMessage != null) {
       _showError(authViewModel.errorMessage!);

@@ -249,12 +249,16 @@ class MapDrawingService {
     _pendingMarkers.clear();
   }
 
-  /// Clear all markers.
   Future<void> clearMarkers() async {
     _pendingMarkers.clear();
-    await _annotationManager?.deleteAll();
+    try {
+      if (_annotationManager != null) {
+        await _annotationManager?.deleteAll();
+      }
+    } catch (e) {
+      debugPrint("Resilient: Could not clear markers (map already disposed?)");
+    }
   }
-
   // =========================================================
   // BUS MARKER METHODS
   // =========================================================
@@ -712,4 +716,3 @@ class MapDrawingService {
     }
   }
 }
-

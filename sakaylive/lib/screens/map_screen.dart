@@ -9,6 +9,7 @@ import 'package:sakaylive/screens/search_page.dart';
 import 'package:sakaylive/screens/theme.dart';
 import 'package:sakaylive/screens/conductor/conductor_dashboard.dart';
 import 'auth_gate.dart';
+import 'coming_soon_page.dart';
 import 'package:sakaylive/viewmodels/map_view_model.dart';
 import 'package:sakaylive/widgets/sakay_bottom_sheet.dart';
 import 'package:sakaylive/widgets/live_bus_card.dart';
@@ -23,15 +24,14 @@ import 'package:sakaylive/utils/haptics.dart';
 import 'package:sakaylive/utils/toast_helper.dart';
 import 'package:sakaylive/screens/account_page.dart';
 
-/// Map Screen - View layer following MVVM pattern.
-/// Only responsible for UI rendering and user interaction forwarding.
+/// Main map screen widget. Handles map display, controls, and navigation.
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
-
   @override
   State<MapScreen> createState() => _MapScreenState();
 }
 
+/// State for MapScreen. Manages map, UI controls, and user actions.
 class _MapScreenState extends State<MapScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final DraggableScrollableController _sheetController =
@@ -42,8 +42,6 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
-    // You might want to initialize Firebase here if needed
-    // But Firebase initialization should typically be in main.dart
   }
 
   @override
@@ -53,59 +51,70 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
+  /// Called when the Mapbox map is created.
+  /// Sets up map ornaments, logo, attribution, and initializes the view model.
   void _onMapCreated(MapboxMap map, MapViewModel viewModel) async {
     _mapboxMap = map;
 
-    // Existing settings
+    // Enable user location with pulsing effect
     map.location.updateSettings(
       LocationComponentSettings(enabled: true, pulsingEnabled: true),
     );
-    map.logo.updateSettings(LogoSettings(marginBottom: 150, marginLeft: 16));
-    map.attribution.updateSettings(
-      AttributionSettings(marginBottom: 150, marginLeft: 100),
-    );
 
-    // NEW: Position compass below Login button (top-right)
-    _positionCompassBelowButtons(map);
+    // Position Mapbox logo and attribution just above the bottom sheet
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = this.context;
+      final double screenHeight = MediaQuery.of(context).size.height;
+      final double topPadding = MediaQuery.of(context).padding.top;
 
+      const double headerH = 40.0;
+      const double searchH = 74.0;
+      final double bottomPadding = MediaQuery.viewPaddingOf(context).bottom;
+      final double minSize =
+          (headerH + searchH + bottomPadding) / screenHeight - 0.02;
+      final double bottomSheetTop = screenHeight * minSize;
+      final double marginBottom = screenHeight - bottomSheetTop + 16;
+      map.logo.updateSettings(
+        LogoSettings(marginBottom: marginBottom - 625, marginLeft: 16),
+      );
+      map.attribution.updateSettings(
+        AttributionSettings(marginBottom: marginBottom - 625, marginLeft: 100),
+      );
+
+      // Position compass below the login button
+      map.compass.updateSettings(
+        CompassSettings(
+          enabled: true,
+          position: OrnamentPosition.TOP_RIGHT,
+          marginTop:
+              topPadding + 80, // SafeArea + Padding(16) + Button(~48) + Gap(16)
+          marginRight: 16,
+        ),
+      );
+    });
+
+    // Position scale bar below the menu button
     _positionScaleBarBelowMenu(map);
 
-    await viewModel.initialize(map); // Wait for completion
+    // Initialize map view model and fetch user location
+    await viewModel.initialize(map);
     viewModel.fetchUserLocation();
   }
 
-  void _positionCompassBelowButtons(MapboxMap mapboxMap) {
-    // Calculate position below your top-right Login button
-    // SafeArea top padding + 16px padding + ~56px button height + 12px gap
-    const double topPadding = 44.0 + 56.0; // iOS status bar + your layout
-
-    mapboxMap.compass.updateSettings(
-      CompassSettings(
-        enabled: true,
-        position: OrnamentPosition.TOP_RIGHT,
-        marginTop: topPadding,
-        marginRight: 16.0, // Match your button's right padding
-        marginLeft: 0,
-        marginBottom: 0,
-      ),
-    );
-  }
-
+  /// Positions the scale bar below the menu button (top left corner).
   void _positionScaleBarBelowMenu(MapboxMap mapboxMap) {
-    // Menu button: SafeArea(top) + Padding(16) + button height(~48-56px) + small gap
-    const double marginTop =
-        44.0 + 16.0 + 56.0 + 8.0; // ~124px from top, left side
-
+    const double marginTop = 44.0 + 16.0 + 56.0 + 8.0;
     mapboxMap.scaleBar.updateSettings(
       ScaleBarSettings(
         enabled: true,
         position: OrnamentPosition.TOP_LEFT,
         marginTop: marginTop,
-        marginLeft: 16.0, // Align with your menu button padding
+        marginLeft: 16.0,
       ),
     );
   }
 
+  /// Opens the search page and handles the result (route or place).
   void _openSearchPage(MapViewModel viewModel) async {
     final result = await Navigator.push(
       context,
@@ -119,9 +128,7 @@ class _MapScreenState extends State<MapScreen> {
     );
 
     if (result != null && result is Map<String, dynamic>) {
-      // Handle route selection vs place selection
       if (result['type'] == 'route') {
-        // Direct route selection - draw on map
         viewModel.selectRoute(result);
         _sheetController.animateTo(
           0.18,
@@ -129,11 +136,9 @@ class _MapScreenState extends State<MapScreen> {
           curve: Curves.easeOut,
         );
       } else {
-        // Place search - plan trip
         final success = await viewModel.planTripToPlace(result);
         if (success) {
           _searchController.text = result['dest'];
-          // Expand to mode 3 (0.85) to show all trip options
           _sheetController.animateTo(
             0.85,
             duration: const Duration(milliseconds: 300),
@@ -152,6 +157,7 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  /// Opens the routes list page and handles route selection.
   void _openRoutesPage(MapViewModel viewModel) async {
     final selected = await Navigator.push(
       context,
@@ -176,7 +182,7 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  /// Show modal with all tracked buses
+  /// Shows a modal with all tracked buses grouped by route.
   void _showAllBusesModal(BuildContext context, MapViewModel viewModel) {
     Haptics.light();
     showModalBottomSheet(
@@ -195,6 +201,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  /// Handles selection of a trip option, route, or place from the UI.
   void _handleItemSelection(Map<String, dynamic> item, MapViewModel viewModel) {
     Haptics.light();
     if (item['type'] == 'trip_option') {
@@ -247,6 +254,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  /// Builds the main map screen UI, including map, controls, and bottom sheet.
   Widget _buildScreen(
     BuildContext context,
     MapViewModel viewModel,
@@ -264,9 +272,7 @@ class _MapScreenState extends State<MapScreen> {
         (headerH + searchH + buttonsH + bottomPadding) / screenHeight - 0.02;
 
     return FutureBuilder<bool>(
-      future: Future.value(
-        authVM.isConductor ?? false,
-      ), // ✅ Use ViewModel state directly
+      future: Future.value(authVM.isConductor ?? false),
       initialData: authVM.isConductor ?? false,
       builder: (context, snapshot) {
         final bool isConductor = authVM.isConductor ?? false;
@@ -300,7 +306,7 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
 
-              // Menu Button - WCAG compliant with semantic label
+              // Menu Button
               Positioned(
                 top: 0,
                 left: 0,
@@ -319,26 +325,7 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
 
-              // 🚌 MAP BUS BUTTON: TOGGLE VISIBILITY (Clean Map)
-              // Aligned with the location button on the right side
-              Positioned(
-                left: 16,
-                bottom: (screenHeight * minSize) + 20,
-                child: _circularIconButton(
-                  viewModel.showAllBuses
-                      ? Icons.directions_bus
-                      : Icons.directions_bus_outlined,
-                  isActive: viewModel.showAllBuses,
-                  onPressed: () {
-                    Haptics.light();
-                    viewModel.toggleBusVisibility();
-                  },
-                  semanticLabel: viewModel.showAllBuses
-                      ? 'Hide buses'
-                      : 'Show all buses',
-                ),
-              ),
-              // Profile/Login Button - ✅ Now uses FutureBuilder data
+              // Profile/Login Button
               Positioned(
                 top: 0,
                 right: 0,
@@ -432,7 +419,25 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
 
-              // Location Button - WCAG compliant with loading feedback
+              // Bus Visibility Toggle
+              Positioned(
+                right: 16,
+                bottom: (screenHeight * minSize) + 88,
+                child: _circularIconButton(
+                  viewModel.showAllBuses
+                      ? Icons.directions_bus
+                      : Icons.directions_bus_outlined,
+                  isActive: viewModel.showAllBuses,
+                  onPressed: () {
+                    Haptics.light();
+                    viewModel.toggleBusVisibility();
+                  },
+                  semanticLabel: viewModel.showAllBuses
+                      ? 'Hide buses'
+                      : 'Show all buses',
+                ),
+              ),
+              // Location Button
               Positioned(
                 right: 16,
                 bottom: (screenHeight * minSize) + 20,
@@ -449,20 +454,19 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
 
-              // Bus Info Snippet - Shows when a bus marker is tapped
+              // Bus Info Snippet
               if (viewModel.hasTappedVehicle)
                 Positioned(
                   left: 0,
                   right: 0,
-                  bottom:
-                      (screenHeight * midSize) + 60, // Above the bottom sheet
+                  bottom: (screenHeight * midSize) + 60,
                   child: BusInfoSnippet(
                     vehicle: viewModel.tappedVehicle!,
                     onClose: () => viewModel.clearTappedBus(),
                   ),
                 ),
 
-              // Bottom Sheet - with Live Tracking
+              // Bottom Sheet
               DraggableScrollableSheet(
                 controller: _sheetController,
                 initialChildSize: minSize,
@@ -472,19 +476,15 @@ class _MapScreenState extends State<MapScreen> {
                 snapSizes: [minSize, midSize, 0.85],
                 builder: (context, scrollController) {
                   return SakayBottomSheet(
-                    // ❌ REMOVE SafeArea wrapper completely
                     scrollController: scrollController,
                     searchController: _searchController,
                     routes: viewModel.displayList,
                     selectedRouteNum: viewModel.selectedRouteNum,
-                    bottomPadding:
-                        bottomPadding, // ✅ This handles ALL nav bar safety
+                    bottomPadding: bottomPadding,
                     trackedVehicles: viewModel.trackedVehicles,
                     isTrackingEnabled: viewModel.isTrackingEnabled,
-                    showAllBuses:
-                        viewModel.showAllBuses, // Pass visibility state
-                    onToggleBusVisibility:
-                        viewModel.toggleBusVisibility, // Connect toggle
+                    showAllBuses: viewModel.showAllBuses,
+                    onToggleBusVisibility: viewModel.toggleBusVisibility,
                     onToggleTracking: () {
                       if (viewModel.isTrackingEnabled) {
                         viewModel.stopVehicleTracking();
@@ -528,6 +528,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  /// Builds the navigation drawer with user info, menu, and debug tools.
   Widget _buildDrawer(AuthViewModel authVM, bool isConductor) {
     final user = authVM.user;
     final isLoggedIn = authVM.isLoggedIn;
@@ -601,12 +602,30 @@ class _MapScreenState extends State<MapScreen> {
                   _buildDrawerItem(
                     icon: Icons.settings_rounded,
                     label: 'Settings',
-                    onTap: () {},
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              const ComingSoonPage(title: 'Settings'),
+                        ),
+                      );
+                    },
                   ),
                   _buildDrawerItem(
                     icon: Icons.help_outline_rounded,
                     label: 'Help & Support',
-                    onTap: () {},
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              const ComingSoonPage(title: 'Help & Support'),
+                        ),
+                      );
+                    },
                   ),
                   const Divider(height: 24),
                   const Padding(
@@ -623,114 +642,108 @@ class _MapScreenState extends State<MapScreen> {
                   Builder(
                     builder: (context) {
                       final viewModel = Provider.of<MapViewModel>(context);
-                      if (viewModel.useDemoMode) {
-                        return Column(
-                          children: [
-                            _buildDrawerItem(
-                              icon: Icons.add_location_alt_rounded,
-                              label: 'Add Fake Buses',
-                              onTap: () {
-                                Navigator.pop(context);
-                                viewModel.addFakeBuses(count: 5);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Row(
-                                      children: [
-                                        Icon(
-                                          Icons.directions_bus_filled_rounded,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                        SizedBox(width: 10),
-                                        Text('Added 5 fake buses!'),
-                                      ],
-                                    ),
-                                    duration: const Duration(seconds: 2),
+                      return Column(
+                        children: [
+                          _buildDrawerItem(
+                            icon: Icons.add_location_alt_rounded,
+                            label: 'Add Fake Buses',
+                            onTap: () async {
+                              Navigator.pop(context);
+                              await viewModel.addFakeBuses();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.directions_bus_filled_rounded,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Text('Added fake buses for all routes!'),
+                                    ],
                                   ),
-                                );
-                              },
-                            ),
-                            _buildDrawerItem(
-                              icon: Icons.play_circle_rounded,
-                              label: 'Start Moving Buses',
-                              onTap: () {
-                                Navigator.pop(context);
-                                viewModel.startMovingFakeBuses();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Row(
-                                      children: [
-                                        Icon(
-                                          Icons.play_circle_filled_rounded,
-                                          color: Colors.white,
-                                          size: 20,
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                          ),
+                          _buildDrawerItem(
+                            icon: Icons.play_circle_rounded,
+                            label: 'Start Moving Buses',
+                            onTap: viewModel.hasFakeBuses
+                                ? () {
+                                    Navigator.pop(context);
+                                    viewModel.startMovingFakeBuses();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: const Row(
+                                          children: [
+                                            Icon(
+                                              Icons.play_circle_filled_rounded,
+                                              color: Colors.white,
+                                              size: 20,
+                                            ),
+                                            SizedBox(width: 10),
+                                            Text('Started moving buses!'),
+                                          ],
                                         ),
-                                        SizedBox(width: 10),
-                                        Text('Started moving buses!'),
-                                      ],
-                                    ),
-                                    duration: const Duration(seconds: 2),
+                                        duration: const Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                : null,
+                          ),
+                          _buildDrawerItem(
+                            icon: Icons.stop_circle_rounded,
+                            label: 'Stop Moving Buses',
+                            onTap: () {
+                              Navigator.pop(context);
+                              viewModel.stopMovingFakeBuses();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: const Row(
+                                    children: [
+                                      Icon(
+                                        Icons.stop_circle_rounded,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 10),
+                                      Text('Stopped moving buses'),
+                                    ],
                                   ),
-                                );
-                              },
-                            ),
-                            _buildDrawerItem(
-                              icon: Icons.stop_circle_rounded,
-                              label: 'Stop Moving Buses',
-                              onTap: () {
-                                Navigator.pop(context);
-                                viewModel.stopMovingFakeBuses();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Row(
-                                      children: [
-                                        Icon(
-                                          Icons.stop_circle_rounded,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                        SizedBox(width: 10),
-                                        Text('Stopped moving buses'),
-                                      ],
-                                    ),
-                                    duration: const Duration(seconds: 2),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                          ),
+                          _buildDrawerItem(
+                            icon: Icons.delete_sweep_rounded,
+                            label: 'Clear All Buses',
+                            onTap: () {
+                              Navigator.pop(context);
+                              viewModel.clearFakeBuses();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: const Row(
+                                    children: [
+                                      Icon(
+                                        Icons.cleaning_services_rounded,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 10),
+                                      Text('Cleared all fake buses'),
+                                    ],
                                   ),
-                                );
-                              },
-                            ),
-                            _buildDrawerItem(
-                              icon: Icons.delete_sweep_rounded,
-                              label: 'Clear All Buses',
-                              onTap: () {
-                                Navigator.pop(context);
-                                viewModel.clearFakeBuses();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Row(
-                                      children: [
-                                        Icon(
-                                          Icons.cleaning_services_rounded,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                        SizedBox(width: 10),
-                                        Text('Cleared all fake buses'),
-                                      ],
-                                    ),
-                                    duration: const Duration(seconds: 2),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        );
-                      } else {
-                        return _buildDrawerItem(
-                          icon: Icons.directions_bus_filled_rounded,
-                          label: 'Bus simulation only in Demo Mode',
-                          onTap: () {},
-                        );
-                      }
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      );
                     },
                   ),
                   const Divider(height: 16),
@@ -819,48 +832,65 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  /// Builds a single drawer menu item with icon and label.
+  /// If [onTap] is null, the item is disabled (reduced opacity, no tap feedback).
   Widget _buildDrawerItem({
     required IconData icon,
     required String label,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
     bool isHighlighted = false,
+    Widget? child,
   }) {
+    final bool isDisabled = onTap == null;
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
-      child: Material(
-        color: isHighlighted
-            ? const Color(0xFF3B82F6).withOpacity(0.1)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
+      child: Opacity(
+        opacity: isDisabled ? 0.5 : 1.0,
+        child: Material(
+          color: isHighlighted
+              ? const Color(0xFF3B82F6).withOpacity(0.1)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
-          splashColor: const Color(0xFF3B82F6).withOpacity(0.15),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  color: isHighlighted
-                      ? const Color(0xFF3B82F6)
-                      : const Color(0xFF5C5C5C),
-                  size: 22,
-                ),
-                const SizedBox(width: 14),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: isHighlighted
-                        ? FontWeight.w700
-                        : FontWeight.w600,
+          child: InkWell(
+            onTap: isDisabled ? null : onTap,
+            borderRadius: BorderRadius.circular(12),
+            splashColor: isDisabled
+                ? Colors.transparent
+                : const Color(0xFF3B82F6).withOpacity(0.15),
+            highlightColor: isDisabled ? Colors.transparent : null,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Icon(
+                    icon,
                     color: isHighlighted
                         ? const Color(0xFF3B82F6)
-                        : const Color(0xFF3D3D3D),
+                        : const Color(0xFF5C5C5C),
+                    size: 22,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 14),
+                  if (child != null)
+                    Expanded(child: child)
+                  else
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: isHighlighted
+                              ? FontWeight.w700
+                              : FontWeight.w600,
+                          color: isHighlighted
+                              ? const Color(0xFF3B82F6)
+                              : const Color(0xFF3D3D3D),
+                        ),
+                        softWrap: true,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -868,7 +898,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  /// Location Mode Toggle - switches between Demo Mode and Live Location
+  /// Builds the location mode toggle (Demo/Live) for the drawer.
   Widget _buildLocationModeToggle(BuildContext context) {
     final viewModel = Provider.of<MapViewModel>(context);
     final isDemoMode = viewModel.useDemoMode;
@@ -972,7 +1002,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  /// Build a minimal trip stats chip - only shows when trip is active
+  /// Builds a minimal trip stats popover chip (shows when trip is active).
   Widget _buildStatsPopover(MapViewModel viewModel) {
     final tripStats = viewModel.activeTripStats;
 
@@ -1236,7 +1266,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  /// Build a single stat chip row with icon - DUPLICATE REMOVED BELOW
+  /// Builds a single stat chip row with icon for trip stats.
   Widget _buildStatChip({
     required IconData icon,
     required String value,
@@ -1267,7 +1297,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  /// Modern floating icon button with gradient support
+  /// Builds a modern floating circular icon button with optional highlight.
   Widget _circularIconButton(
     IconData icon, {
     VoidCallback? onPressed,
@@ -1322,7 +1352,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 }
 
-/// Modal showing all tracked buses grouped by route
+/// Modal bottom sheet showing all tracked buses grouped by route.
 class _AllBusesModal extends StatelessWidget {
   final List<TrackedVehicle> vehicles;
   final Function(TrackedVehicle) onBusTap;
@@ -1330,20 +1360,20 @@ class _AllBusesModal extends StatelessWidget {
   const _AllBusesModal({required this.vehicles, required this.onBusTap});
 
   @override
+  /// Builds the modal bottom sheet UI for all tracked buses, grouped by route.
+  @override
   Widget build(BuildContext context) {
-    // Group vehicles by route
+    // Group vehicles by routeId
     final Map<String, List<TrackedVehicle>> groupedVehicles = {};
     for (var vehicle in vehicles) {
-      if (!groupedVehicles.containsKey(vehicle.position.routeId)) {
-        groupedVehicles[vehicle.position.routeId] = [];
-      }
-      groupedVehicles[vehicle.position.routeId]!.add(vehicle);
+      groupedVehicles
+          .putIfAbsent(vehicle.position.routeId, () => [])
+          .add(vehicle);
     }
 
-    final sortedRouteIds = groupedVehicles.keys.toList()
-      ..sort((a, b) => a.compareTo(b));
+    final sortedRouteIds = groupedVehicles.keys.toList()..sort();
 
-    // Calculate height based on content but cap at 70%
+    // Modal height capped at 70% of screen
     return Container(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.7,
@@ -1355,7 +1385,7 @@ class _AllBusesModal extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle
+          // Drag handle
           const SizedBox(height: 12),
           Container(
             width: 40,
@@ -1365,8 +1395,7 @@ class _AllBusesModal extends StatelessWidget {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-
-          // Header
+          // Header with icon and summary
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -1416,10 +1445,8 @@ class _AllBusesModal extends StatelessWidget {
               ],
             ),
           ),
-
           const Divider(height: 1, color: Color(0xFFF3F4F6)),
-
-          // Bus list grouped by Route
+          // List of buses grouped by route
           Flexible(
             child: vehicles.isEmpty
                 ? _buildEmptyState()
@@ -1432,11 +1459,9 @@ class _AllBusesModal extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final routeId = sortedRouteIds[index];
                       final routeBuses = groupedVehicles[routeId] ?? [];
-                      // Get name from first bus
                       final routeName = routeBuses.isNotEmpty
                           ? routeBuses.first.routeName
                           : "Route $routeId";
-
                       return Theme(
                         data: Theme.of(
                           context,

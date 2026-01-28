@@ -20,95 +20,74 @@ import 'package:flutter/services.dart'; // for rootBundle
 import 'dart:async';
 import 'package:sakaylive/models/vehicle_position.dart';
 
-/// ViewModel for the Map Screen following MVVM pattern.
-/// Contains all business logic and state management.
+// Manages map state and business logic.
 class MapViewModel extends ChangeNotifier {
-  /// Clear the cached user location (for mode switching)
+  bool get hasFakeBuses => _fakeBusState.isNotEmpty;
+
   void clearUserLocation() {
     _userLocation = null;
     notifyListeners();
   }
 
-  // --- SERVICES ---
   final RouteService _routeService = RouteService();
   final MapDrawingService _mapDrawingService = MapDrawingService();
   VehicleTrackingService? _vehicleTrackingService;
   MapboxMap? _map;
 
-  // --- FIREBASE ---
   late final FirebaseDatabase _database;
 
-  // --- API ---
   late SearchBoxAPI _searchBoxApi;
   String _sessionToken = const Uuid().v4();
 
-  // --- MOCK LOCATION FOR TESTING ---
-  // Set to true to use fake location instead of real GPS
-  // In production, set this to false to use real GPS
-  bool _useDemoMode = true; // Mutable - can be toggled at runtime
-  // PHV6+497, Quintin Salas St, Jaro, Iloilo City, 5000 Iloilo
+  bool _useDemoMode = true;
   static const double mockLatitude = 10.7244;
   static const double mockLongitude = 122.5575;
 
-  // Getter and setter for demo mode
   bool get useDemoMode => _useDemoMode;
   void setDemoMode(bool value) {
     _useDemoMode = value;
     notifyListeners();
   }
 
-  // --- BUS DATA MODE ---
-  // Set to true to use mock/simulated buses, false for real conductor data only
   static const bool useMockBuses = true;
 
-  // --- STATE ---
   bool _isInitialized = false;
   bool _isFetchingLocation = false;
   geo.Position? _userLocation;
   Point? _destinationPoint;
   String? _selectedRouteNum;
-  String?
-  _currentRouteWithLandmarks; // Track which route has landmarks displayed
-  int?
-  _selectedDirectionIndex; // 0 or 1 - which direction the trip is traveling
+  String? _currentRouteWithLandmarks;
+  int? _selectedDirectionIndex;
   String _searchText = '';
-  List<Map<String, dynamic>> _cachedRoutes = []; // 🔥 FIREBASE ROUTES
+  List<Map<String, dynamic>> _cachedRoutes = [];
   List<Map<String, dynamic>> _displayList = [];
 
-  // --- TRIP STATISTICS ---
   Map<String, dynamic>? _activeTripStats;
 
-  // --- LIVE VEHICLE TRACKING ---
   List<TrackedVehicle> _trackedVehicles = [];
   bool _isTrackingEnabled = false;
 
-  // --- BUS VISIBILITY CONTROL ---
-  bool _showAllBuses =
-      true; // Show all buses by default (set to false for cleaner map in production)
-  String? _highlightedVehicleId; // ID of the "nearest bus" to highlight
-  bool _showOnlyRealConductors =
-      false; // Filter to show only verified conductor buses
+  bool _showAllBuses = true;
+  String? _highlightedVehicleId;
+  bool _showOnlyRealConductors = false;
 
-  // --- TAPPED BUS STATE (for showing bus info card) ---
   TrackedVehicle? _tappedVehicle;
 
-  // --- GETTERS ---
   bool get isInitialized => _isInitialized;
-  bool get isRoutesLoaded => _cachedRoutes.isNotEmpty; // 🔥 CHANGED
+  bool get isRoutesLoaded => _cachedRoutes.isNotEmpty;
   bool get isFetchingLocation => _isFetchingLocation;
   geo.Position? get userLocation => _userLocation;
   Point? get destinationPoint => _destinationPoint;
   String? get selectedRouteNum => _selectedRouteNum;
   String get searchText => _searchText;
   List<Map<String, dynamic>> get displayList => _displayList;
-  List<Map<String, dynamic>> get localRoutes => _cachedRoutes; // 🔥 CHANGED
+  List<Map<String, dynamic>> get localRoutes => _cachedRoutes;
   SearchBoxAPI get searchBoxApi => _searchBoxApi;
   MapDrawingService get mapDrawingService => _mapDrawingService;
   String get sessionToken => _sessionToken;
   Map<String, dynamic>? get activeTripStats => _activeTripStats;
   bool get hasActiveTrip => _activeTripStats != null;
 
-  // --- VEHICLE TRACKING GETTERS ---
   List<TrackedVehicle> get trackedVehicles => _trackedVehicles;
   bool get isTrackingEnabled => _isTrackingEnabled;
   bool get showAllBuses => _showAllBuses;
@@ -117,19 +96,15 @@ class MapViewModel extends ChangeNotifier {
       _trackedVehicles.isNotEmpty ? _trackedVehicles.first : null;
   int get activeVehicleCount => _trackedVehicles.length;
 
-  /// Count of real conductor buses (not simulated)
   int get realConductorCount =>
       _trackedVehicles.where((v) => v.isRealConductor).length;
 
-  /// Count of simulated buses
   int get simulatedBusCount =>
       _trackedVehicles.where((v) => !v.isRealConductor).length;
 
-  /// Currently tapped/selected bus (for showing info card)
   TrackedVehicle? get tappedVehicle => _tappedVehicle;
   bool get hasTappedVehicle => _tappedVehicle != null;
 
-  /// Get nearest vehicle for the currently selected route
   TrackedVehicle? get nearestVehicleForSelectedRoute {
     if (_selectedRouteNum == null) return null;
     return _vehicleTrackingService?.getNearestVehicleForRoute(
@@ -137,12 +112,15 @@ class MapViewModel extends ChangeNotifier {
     );
   }
 
-  /// Get all vehicles for the currently selected route
   List<TrackedVehicle> get vehiclesForSelectedRoute {
     if (_selectedRouteNum == null) return [];
     return _vehicleTrackingService?.getVehiclesForRoute(_selectedRouteNum!) ??
         [];
   }
+
+  final StreamController<String> _errorController =
+      StreamController<String>.broadcast();
+  Stream<String> get errorStream => _errorController.stream;
 
   MapViewModel() {
     _initializeApi();
@@ -155,13 +133,13 @@ class MapViewModel extends ChangeNotifier {
       MapBoxSearch.init(token);
       _searchBoxApi = SearchBoxAPI(limit: 5, country: 'PH');
     } else {
-      debugPrint("⚠️ WARNING: Mapbox Access Token missing");
+      debugPrint("Warning: Mapbox Access Token missing");
       _searchBoxApi = SearchBoxAPI(limit: 5);
     }
   }
 
-  /// 🔥 NEW: Initialize Firebase + Load Routes
   Future<void> initializeFirebase() async {
+    debugPrint('Initializing Firebase RTDB...');
     _database = FirebaseDatabase.instanceFor(
       app: Firebase.app(),
       databaseURL:
@@ -169,32 +147,23 @@ class MapViewModel extends ChangeNotifier {
     );
     await loadRoutesFromFirebase();
 
-    // Initialize vehicle tracking service
     _vehicleTrackingService = VehicleTrackingService(_database);
     _vehicleTrackingService!.onVehiclesUpdated = _onVehiclesUpdated;
   }
 
-  /// Handle vehicle updates from tracking service
   void _onVehiclesUpdated(List<TrackedVehicle> vehicles) {
     _trackedVehicles = vehicles;
-    debugPrint('📍 Received ${vehicles.length} vehicles from tracking service');
+    debugPrint('Received ${vehicles.length} vehicles from tracking service');
     notifyListeners();
 
-    // Also update markers on map if tracking is enabled
     if (_isTrackingEnabled && _isInitialized) {
-      debugPrint('🎨 Redrawing vehicle markers...');
+      debugPrint('Redrawing vehicle markers...');
       _drawVehicleMarkers();
-    } else {
-      debugPrint(
-        '⚠️ Skipping marker draw: tracking=$_isTrackingEnabled, initialized=$_isInitialized',
-      );
     }
   }
 
-  /// Maximum distance (in meters) to show buses when no route is selected
-  static const double _nearbyBusRadiusMeters = 2000; // 2km
+  static const double _nearbyBusRadiusMeters = 2000;
 
-  /// Toggle to show only real conductor buses (not simulated)
   void setShowOnlyRealConductors(bool value) {
     _showOnlyRealConductors = value;
     if (_isTrackingEnabled) {
@@ -203,53 +172,31 @@ class MapViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Draw vehicle markers on the map using CONTEXT-BASED FILTERING:
-  /// - Idle Mode (no route selected): Show all tracked buses
-  /// - Route Selected: Show ONLY buses serving that specific route
-  /// - Real Conductor Mode: Only show verified conductor buses
+  // Updates vehicle markers on the map based on current route and filtering rules.
   Future<void> _drawVehicleMarkers() async {
     if (_map == null || !_isInitialized) {
-      debugPrint(
-        '❌ Cannot draw markers: map=$_map, initialized=$_isInitialized',
-      );
+      debugPrint('Cannot draw markers: map=$_map, initialized=$_isInitialized');
       return;
     }
 
     debugPrint(
-      '🎨 _drawVehicleMarkers: ${_trackedVehicles.length} total vehicles',
+      '_drawVehicleMarkers: ${_trackedVehicles.length} total vehicles',
     );
     debugPrint(
-      '🎨 Filter: route=$_selectedRouteNum, directionIndex=$_selectedDirectionIndex',
+      'Filter: route=$_selectedRouteNum, directionIndex=$_selectedDirectionIndex',
     );
 
-    // Clear previous bus markers
     await _mapDrawingService.clearBusMarkers();
 
-    // CONTEXT FILTER: Determine what buses to show based on user state
     List<TrackedVehicle> vehiclesToShow = [];
-
-    // VISIBILITY LOGIC:
-    // 1. If a route is selected → ONLY show buses for that route (always filter)
-    // 2. If NO route selected AND _showAllBuses is ON → Show all buses
-    // 3. If NO route selected AND _showAllBuses is OFF → Hide all buses
-    // 4. If _showOnlyRealConductors is ON → Filter out simulated buses
-
     final bool showingSpecificRoute = _selectedRouteNum != null;
     final bool allowVisibility = showingSpecificRoute || _showAllBuses;
 
-    if (!allowVisibility) {
-      // Hide all buses
-    } else {
+    if (allowVisibility) {
       for (var vehicle in _trackedVehicles) {
-        // FILTER 0: If showing only real conductors, skip simulated buses
-        if (_showOnlyRealConductors && !vehicle.isRealConductor) {
-          continue;
-        }
+        if (_showOnlyRealConductors && !vehicle.isRealConductor) continue;
 
-        // FILTER 1: If a route is selected, ALWAYS filter to that route only
         if (showingSpecificRoute) {
-          // Flexible route matching - handle different formats:
-          // routeId could be "10", "route_10", "Route 10", etc.
           final vehicleRouteId = vehicle.position.routeId.toLowerCase();
           final selectedRoute = _selectedRouteNum!.toLowerCase();
 
@@ -259,112 +206,80 @@ class MapViewModel extends ChangeNotifier {
               vehicleRouteId == 'route $selectedRoute' ||
               vehicleRouteId.contains(selectedRoute);
 
-          if (!routeMatches) {
-            continue; // Skip buses not on selected route
-          }
+          if (!routeMatches) continue;
 
-          // FILTER 2: If direction is selected (trip mode), only show buses going that direction
           if (_selectedDirectionIndex != null) {
             final bool directionMatches =
                 vehicle.position.directionIndex == _selectedDirectionIndex;
             debugPrint(
-              '  🔍 Bus ${vehicle.position.id}: dir=${vehicle.position.directionIndex}, selected=$_selectedDirectionIndex, match=$directionMatches',
+              '  Bus ${vehicle.position.id}: dir=${vehicle.position.directionIndex}, selected=$_selectedDirectionIndex, match=$directionMatches',
             );
             if (!directionMatches) {
-              continue; // Skip buses going the opposite direction
+              continue;
             }
           }
         }
-        // If no route selected and _showAllBuses is true, show all buses
-
-        // NOTE: Stale filter is already handled in VehicleTrackingService
         vehiclesToShow.add(vehicle);
       }
     }
 
-    // Auto-highlight the nearest bus for the selected route
     if (showingSpecificRoute && vehiclesToShow.isNotEmpty) {
-      // Sort by distance to user and highlight the nearest
       vehiclesToShow.sort(
         (a, b) => a.distanceToUserMeters.compareTo(b.distanceToUserMeters),
       );
       _highlightedVehicleId = vehiclesToShow.first.position.id;
     } else if (!showingSpecificRoute) {
-      _highlightedVehicleId = null; // Clear highlight when no route selected
+      _highlightedVehicleId = null;
     }
 
     if (allowVisibility) {
       final realCount = vehiclesToShow.where((v) => v.isRealConductor).length;
       final simCount = vehiclesToShow.where((v) => !v.isRealConductor).length;
       debugPrint(
-        '🚌 Showing ${vehiclesToShow.length} buses '
-        '(Real: $realCount, Simulated: $simCount, Route: $_selectedRouteNum)',
+        'Showing ${vehiclesToShow.length} buses (Real: $realCount, Simulated: $simCount, Route: $_selectedRouteNum)',
       );
     } else {
-      debugPrint('🧹 Clean Map Mode: Hiding all buses');
+      debugPrint('Clean Map Mode: Hiding all buses');
     }
 
-    // Draw bus markers with OCCUPANCY-BASED coloring
-    // Color indicates capacity status set by conductor:
-    // Green = seats available, Yellow = standing only, Red = full
     for (var vehicle in vehiclesToShow) {
-      // Use occupancy status color instead of route color
       final occupancyColor = _getOccupancyColor(vehicle.position.occupancy);
-
       final isHighlighted = (vehicle.position.id == _highlightedVehicleId);
 
-      // Show distance from user instead of ETA
       final distanceKm = vehicle.distanceToUserMeters / 1000;
-      String distanceText;
-      if (distanceKm < 1) {
-        distanceText = '${vehicle.distanceToUserMeters.round()}m';
-      } else {
-        distanceText = '${distanceKm.toStringAsFixed(1)}km';
-      }
+      String distanceText = distanceKm < 1
+          ? '${vehicle.distanceToUserMeters.round()}m'
+          : '${distanceKm.toStringAsFixed(1)}km';
 
-      // Build label: highlight next bus, show verified badge, and distance
-      String displayLabel;
-      if (isHighlighted) {
-        displayLabel = "★ NEXT • $distanceText";
-      } else if (vehicle.isRealConductor) {
-        displayLabel = "✓ $distanceText";
-      } else {
-        displayLabel = distanceText;
-      }
+      String displayLabel = isHighlighted
+          ? "Next • $distanceText"
+          : (vehicle.isRealConductor
+                ? "Verified • $distanceText"
+                : distanceText);
 
       _mapDrawingService.queueBusMarker(
         coordinates: [vehicle.position.lng, vehicle.position.lat],
         etaText: displayLabel,
         routeName: vehicle.routeName,
-        routeColor: occupancyColor, // Now based on occupancy!
+        routeColor: occupancyColor,
         heading: vehicle.position.heading,
         vehicleId: vehicle.position.id,
-        occupancyLabel: vehicle.position.occupancyLabel, // Accessibility symbol
+        occupancyLabel: vehicle.position.occupancyLabel,
       );
     }
     await _mapDrawingService.flushBusMarkers();
   }
 
-  // =========================================================
-  // BUS TAP INTERACTION
-  // =========================================================
-
-  /// Handle a tap on the map at the given coordinates
-  /// Returns true if a bus was tapped, false otherwise
   bool handleMapTap(double lat, double lng) {
-    // Check if tap is on a bus marker
     final vehicleId = _mapDrawingService.checkBusTap(lat, lng, tolerance: 80.0);
 
     if (vehicleId != null) {
-      // Find the tapped vehicle
       final vehicle = _trackedVehicles.firstWhere(
         (v) => v.position.id == vehicleId,
         orElse: () => _trackedVehicles.first,
       );
 
       _tappedVehicle = vehicle;
-
-      // Fly camera to the bus location
       _mapDrawingService.flyTo(
         lat: vehicle.position.lat,
         lng: vehicle.position.lng,
@@ -372,15 +287,12 @@ class MapViewModel extends ChangeNotifier {
         durationMs: 800,
       );
 
-      debugPrint(
-        '🚌 Bus tapped: ${vehicle.position.id} - ${vehicle.routeName}',
-      );
+      debugPrint('Bus tapped: ${vehicle.position.id} - ${vehicle.routeName}');
 
       notifyListeners();
       return true;
     }
 
-    // Tap was not on a bus - clear any selected bus
     if (_tappedVehicle != null) {
       _tappedVehicle = null;
       notifyListeners();
@@ -389,44 +301,34 @@ class MapViewModel extends ChangeNotifier {
     return false;
   }
 
-  /// Select a specific bus by its ID (from UI list)
   void selectBus(TrackedVehicle vehicle) {
     _tappedVehicle = vehicle;
-
-    // Fly camera to the bus location
     _mapDrawingService.flyTo(
       lat: vehicle.position.lat,
       lng: vehicle.position.lng,
       zoom: 16.0,
       durationMs: 800,
     );
-
     notifyListeners();
   }
 
-  /// Clear the tapped/selected bus
   void clearTappedBus() {
     _tappedVehicle = null;
     notifyListeners();
   }
 
-  /// Get color based on bus occupancy status (conductor-set)
-  /// - Green: Seats available
-  /// - Yellow/Amber: Standing room only
-  /// - Red: Full capacity
   Color _getOccupancyColor(String status) {
     switch (status) {
       case 'red':
-        return const Color(0xFFEF4444); // Full
+        return const Color(0xFFEF4444);
       case 'yellow':
-        return const Color(0xFFF59E0B); // Standing only (amber)
+        return const Color(0xFFF59E0B);
       case 'green':
       default:
-        return const Color(0xFF22C55E); // Seats available
+        return const Color(0xFF22C55E);
     }
   }
 
-  /// Convert color name to Color (for route colors)
   Color _getColorFromName(String colorName) {
     switch (colorName) {
       case 'blue':
@@ -444,24 +346,20 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
-  /// Start live vehicle tracking
   void startVehicleTracking() {
     if (_vehicleTrackingService == null) return;
 
     _isTrackingEnabled = true;
 
-    // Set user location for ETA calculations
     if (_userLocation != null) {
       _vehicleTrackingService!.setUserLocation(
         _userLocation!.latitude,
         _userLocation!.longitude,
       );
     } else {
-      // If no location yet, try to get it
       fetchUserLocation();
     }
 
-    // Set route data for matching
     _vehicleTrackingService!.setRouteData(
       _routeService.cachedRoutes,
       _cachedRoutes,
@@ -471,53 +369,40 @@ class MapViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Stop live vehicle tracking
   void stopVehicleTracking() {
     _vehicleTrackingService?.stopListening();
     _isTrackingEnabled = false;
     _trackedVehicles = [];
-    _tappedVehicle = null; // Clear tapped bus when stopping
-
-    // Clear bus markers from the map
+    _tappedVehicle = null;
     _mapDrawingService.clearBusMarkers();
-
     notifyListeners();
   }
 
-  // --- LIVE TRACKING STATE ---
   StreamSubscription? _vehicleSubscription;
   Timer? _simulationTimer;
   final List<VehiclePosition> _activeVehicles = [];
   bool _isSimulating = false;
 
-  /// 🎧 START LISTENING (Passenger View) - Uses VehicleTrackingService
   void listenToLiveVehicles() {
     startVehicleTracking();
   }
 
-  /// 👻 START SIMULATION (Conductor View)
-  /// Drives a ghost bus along the currently selected route
+  // Simulates a bus moving along a selected route.
   void startGhostBusSimulation() {
     if (_selectedRouteNum == null || _isSimulating) {
-      debugPrint("❌ Select a route first to simulate!");
+      debugPrint("Select a route first to simulate!");
       return;
     }
 
-    // Get the coordinates of the selected route
-    // Assumes the first leg is the bus ride
     final routeData = _displayList.firstWhere(
       (r) => r['num'] == _selectedRouteNum,
     );
 
-    // Safety check: Are there coordinates?
-    // Note: You might need to adjust this path based on your exact data structure
     List<dynamic> rawCoords = [];
     if (routeData['legs'] != null && (routeData['legs'] as List).isNotEmpty) {
       rawCoords = routeData['legs'][0]['coords'];
     } else {
-      // Fallback for direct route objects
-      // You might need to fetch the GeoJSON coordinates here if they aren't loaded
-      debugPrint("⚠️ No coordinates found to drive on.");
+      debugPrint("No coordinates found to drive on.");
       return;
     }
 
@@ -525,7 +410,7 @@ class MapViewModel extends ChangeNotifier {
     int index = 0;
     final String ghostId = "ghost_bus_${_selectedRouteNum}";
 
-    debugPrint("👻 Simulation Started for $ghostId");
+    debugPrint("Simulation Started for $ghostId");
 
     _simulationTimer?.cancel();
     _simulationTimer = Timer.periodic(const Duration(milliseconds: 1000), (
@@ -533,31 +418,29 @@ class MapViewModel extends ChangeNotifier {
     ) async {
       if (!isInitialized) return;
 
-      if (index >= rawCoords.length) index = 0; // Loop forever
+      if (index >= rawCoords.length) index = 0;
 
-      final point = rawCoords[index]; // [lng, lat]
+      final point = rawCoords[index];
 
       final vehicle = VehiclePosition(
         id: ghostId,
         routeId: _selectedRouteNum!,
         lat: point[1],
         lng: point[0],
-        heading: 0, // We can calculate bearing later
+        heading: 0,
         timestamp: DateTime.now().millisecondsSinceEpoch,
       );
 
-      // Upload to Firebase
       try {
         await _database.ref('vehicles/$ghostId').set(vehicle.toJson());
       } catch (e) {
-        debugPrint("🔥 Firebase Write Error: $e");
+        debugPrint("Firebase Write Error: $e");
       }
 
       index++;
     });
   }
 
-  /// 🛑 STOP EVERYTHING
   void stopTracking() {
     _vehicleSubscription?.cancel();
     _simulationTimer?.cancel();
@@ -565,19 +448,16 @@ class MapViewModel extends ChangeNotifier {
     stopVehicleTracking();
   }
 
-  /// 🚌 ADD FAKE BUSES FOR TESTING
-  /// Creates multiple simulated buses at random positions along routes
-  /// These buses will MOVE along their routes to simulate real traffic
   Timer? _fakeBusTimer;
   final Map<String, Map<String, dynamic>> _fakeBusState = {};
 
+  // Creates and moves multiple simulated buses for testing purposes.
   Future<void> addFakeBuses({int count = 5}) async {
     if (!_routeService.isLoaded) {
-      debugPrint("❌ Routes not loaded yet!");
+      debugPrint("Routes not loaded yet!");
       return;
     }
 
-    // Stop any existing fake bus simulation
     _fakeBusTimer?.cancel();
     _fakeBusState.clear();
 
@@ -585,19 +465,17 @@ class MapViewModel extends ChangeNotifier {
     final routes = _routeService.cachedRoutes;
 
     if (routes.isEmpty) {
-      debugPrint("❌ No cached routes available!");
+      debugPrint("No cached routes available!");
       return;
     }
 
-    debugPrint("🚌 Adding fake buses - ensuring both directions per route...");
+    debugPrint("Adding fake buses - ensuring both directions per route...");
 
-    // Group routes by route number to ensure we get both directions
     final Map<String, List<CachedRoute>> routesByNum = {};
     for (final route in routes) {
       routesByNum.putIfAbsent(route.routeNum, () => []).add(route);
     }
 
-    // Debug: Print what directions we have for each route
     for (final entry in routesByNum.entries) {
       final dirs = entry.value.map((r) => r.directionIndex).toList();
       debugPrint("  Route ${entry.key}: has ${dirs.length} directions $dirs");
@@ -605,7 +483,6 @@ class MapViewModel extends ChangeNotifier {
 
     int busIndex = 0;
 
-    // FIRST: Create one bus for EACH direction of EACH route (ensures coverage)
     for (final routeNum in routesByNum.keys) {
       final directionsForRoute = routesByNum[routeNum]!;
 
@@ -632,7 +509,7 @@ class MapViewModel extends ChangeNotifier {
             : 'Dir ${route.directionIndex}';
 
         debugPrint(
-          "  🚐 Bus $busIndex: Route ${route.routeNum} - $dirName (dir=${route.directionIndex})",
+          "  Bus $busIndex: Route ${route.routeNum} - $dirName (dir=${route.directionIndex})",
         );
 
         _fakeBusState[busId] = {
@@ -649,11 +526,9 @@ class MapViewModel extends ChangeNotifier {
       }
     }
 
-    debugPrint("🚌 Created $busIndex buses covering all route directions!");
+    debugPrint("Created $busIndex buses covering all route directions!");
 
-    // Start periodic updates to move the buses
     _fakeBusTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
-      // Create a copy of entries to avoid concurrent modification
       final entries = _fakeBusState.entries.toList();
 
       for (final entry in entries) {
@@ -664,16 +539,14 @@ class MapViewModel extends ChangeNotifier {
         var currentIndex = state['currentIndex'] as int;
         final speed = state['speed'] as int;
 
-        // Move along route
         currentIndex += speed;
         if (currentIndex >= coords.length) {
-          currentIndex = 0; // Loop back to start
+          currentIndex = 0;
         }
         state['currentIndex'] = currentIndex;
 
         final point = coords[currentIndex];
 
-        // Calculate heading based on next point
         double heading = 0;
         if (currentIndex < coords.length - 1) {
           final nextPoint = coords[currentIndex + 1];
@@ -705,15 +578,14 @@ class MapViewModel extends ChangeNotifier {
         try {
           await _database.ref('vehicles/$busId').set(vehicle.toJson());
         } catch (e) {
-          // Silently ignore permission errors during simulation
+          // Ignore write errors during simulation
         }
       }
     });
 
-    debugPrint("🚌 Started ${_fakeBusState.length} moving fake buses!");
+    notifyListeners();
   }
 
-  /// Calculate bearing between two points
   double _calculateBearing(double lat1, double lng1, double lat2, double lng2) {
     final dLng = _toRadians(lng2 - lng1);
     final lat1Rad = _toRadians(lat1);
@@ -728,50 +600,36 @@ class MapViewModel extends ChangeNotifier {
     return (bearing + 360) % 360;
   }
 
-  /// Stop fake bus simulation
   void stopFakeBuses() {
     _fakeBusTimer?.cancel();
     _fakeBusTimer = null;
     _fakeBusState.clear();
-    debugPrint("🛑 Stopped fake bus simulation");
   }
 
-  /// 🧹 CLEAR ALL FAKE BUSES
   Future<void> clearFakeBuses() async {
-    // First stop all timers
     stopMovingFakeBuses();
+    _fakeBusState.clear();
 
     try {
-      // Remove from Firebase
       await _database.ref('vehicles').remove();
-      debugPrint("🧹 Cleared all vehicles from Firebase");
-
-      // Clear local tracked vehicles list
       _trackedVehicles.clear();
       _tappedVehicle = null;
-
-      // Clear bus markers from the map
       await _mapDrawingService.clearBusMarkers();
-
       notifyListeners();
     } catch (e) {
-      debugPrint("🔥 Error clearing vehicles: $e");
+      debugPrint("Error clearing vehicles: $e");
     }
   }
 
-  /// 🔄 SIMULATE MOVING BUSES
-  /// Makes all fake buses move along their routes
   List<Timer> _busTimers = [];
 
   void startMovingFakeBuses() {
     if (_fakeBusState.isEmpty) {
-      debugPrint("❌ No fake buses to move! Add fake buses first.");
+      debugPrint("No fake buses to move!");
       return;
     }
 
-    // Stop any existing timers
     stopMovingFakeBuses();
-
     final random = math.Random();
 
     for (final entry in _fakeBusState.entries) {
@@ -779,19 +637,17 @@ class MapViewModel extends ChangeNotifier {
       final state = entry.value;
       final coords = state['coords'] as List<List<double>>;
       int currentIndex = (state['currentIndex'] as num).toInt();
-      final speed = 800 + random.nextInt(700); // 800-1500ms per update
+      final speed = 800 + random.nextInt(700);
 
       final timer = Timer.periodic(Duration(milliseconds: speed), (t) async {
         if (coords.isEmpty) return;
         if (currentIndex >= coords.length - 1) {
-          currentIndex = 0; // Loop back
+          currentIndex = 0;
         }
 
         final point = coords[currentIndex];
 
-        // Randomize occupancy for testing moving buses too
         String occupancy = state['occupancy'] ?? "green";
-        int roll = random.nextInt(100);
         int seed = busId.hashCode + currentIndex;
         if (seed % 100 > 85) {
           occupancy = "red";
@@ -819,7 +675,7 @@ class MapViewModel extends ChangeNotifier {
         try {
           await _database.ref('vehicles/$busId').set(vehicle.toJson());
         } catch (e) {
-          debugPrint("🔥 Error updating moving bus: $e");
+          debugPrint("Error updating moving bus: $e");
         }
 
         int moveSpeed = (state['speed'] ?? 1) is int
@@ -831,30 +687,26 @@ class MapViewModel extends ChangeNotifier {
 
       _busTimers.add(timer);
     }
-
-    debugPrint("🚌 Started ${_busTimers.length} moving fake buses!");
   }
 
   void stopMovingFakeBuses() {
-    // Stop the moving bus timers
     for (var timer in _busTimers) {
       timer.cancel();
     }
     _busTimers.clear();
 
-    // Also stop the fake bus timer from addFakeBuses
     _fakeBusTimer?.cancel();
     _fakeBusTimer = null;
-    _fakeBusState.clear();
-
-    debugPrint("🛑 Stopped all moving buses and fake bus simulations");
+    notifyListeners();
   }
 
-  /// 🔥 NEW: Load routes from Firebase
   Future<void> loadRoutesFromFirebase() async {
     try {
       final snapshot = await _database.ref('routes').get();
-      if (snapshot.value == null) return;
+      if (snapshot.value == null) {
+        debugPrint("No routes found in Firebase");
+        return;
+      }
 
       List<dynamic> rawData = snapshot.value as List<dynamic>;
       _cachedRoutes = rawData
@@ -862,6 +714,7 @@ class MapViewModel extends ChangeNotifier {
           .toList();
 
       _displayList = List.from(_cachedRoutes);
+      debugPrint("Loaded ${_cachedRoutes.length} routes from Firebase");
       notifyListeners();
     } catch (e) {
       debugPrint("Firebase routes error: $e");
@@ -872,7 +725,6 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
-  /// 🔥 FIXED: Handle both Map and String from Firebase
   Future<Map<String, dynamic>?> loadGeoJson(String path) async {
     try {
       final parentSnap = await _database.ref(path).get();
@@ -883,7 +735,6 @@ class MapViewModel extends ChangeNotifier {
         'features': <Map<String, dynamic>>[],
       };
 
-      // 🔥 FIX: Handle List<Object?> from features
       final featuresSnap = await _database.ref('$path/features').get();
       if (featuresSnap.value != null) {
         List<dynamic> featuresList = featuresSnap.value as List<dynamic>;
@@ -895,47 +746,42 @@ class MapViewModel extends ChangeNotifier {
         }
       }
 
-      debugPrint("✅ GeoJSON loaded: ${geoJson['features'].length} features");
+      debugPrint(
+        "GeoJSON loaded: ${geoJson['features'].length} features from $path",
+      );
       return geoJson;
     } catch (e) {
-      debugPrint("GeoJSON error: $e");
+      debugPrint("GeoJson error for $path: $e");
       return null;
     }
   }
 
-  /// Initialize the map and preload routes.
   Future<void> initialize(MapboxMap map) async {
     _map = map;
     _mapDrawingService.initialize(map);
     await _mapDrawingService.initAnnotationManager();
-    await initializeFirebase(); // 🔥 FIREBASE FIRST
-
-    // 🔥 PRELOAD ROUTES FOR ROUTE FINDING
+    await initializeFirebase();
     await _preloadRoutesForFinding();
-
-    // 🚌 AUTO-START VEHICLE TRACKING
     startVehicleTracking();
 
     _isInitialized = true;
     notifyListeners();
   }
 
-  /// Preload route coordinates for route finding algorithm
   Future<void> _preloadRoutesForFinding() async {
     try {
-      // Use local routes data which has asset paths
       await _routeService.preloadRoutes(localRoutesData);
       debugPrint(
-        "✅ Routes preloaded for route finding: ${_routeService.cachedRoutes.length} directions",
+        "Routes preloaded for route finding: ${_routeService.cachedRoutes.length} directions",
       );
     } catch (e) {
-      debugPrint("❌ Failed to preload routes: $e");
+      debugPrint("Failed to preload routes: $e");
     }
   }
 
   Future<void> _safeDraw(Future<void> Function() drawFn) async {
     if (_map == null || !_isInitialized) {
-      debugPrint("❌ Map not ready for drawing");
+      debugPrint("Map not ready for drawing");
       return;
     }
     try {
@@ -945,15 +791,13 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
-  /// Update the search text and reset display if empty.
   void updateSearchText(String text) {
     _searchText = text;
     if (text.isEmpty) {
-      _displayList = List.from(_cachedRoutes); // 🔥 CHANGED
+      _displayList = List.from(_cachedRoutes);
       _selectedRouteNum = null;
       _selectedDirectionIndex = null;
     } else {
-      // Filter cached routes
       _displayList = _cachedRoutes.where((route) {
         final num = route['num'].toString().toLowerCase();
         final dest = route['dest'].toString().toLowerCase();
@@ -964,15 +808,13 @@ class MapViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Handle user location fetch.
   Future<void> fetchUserLocation() async {
     _isFetchingLocation = true;
     notifyListeners();
 
     try {
       if (_useDemoMode) {
-        // 🧪 MOCK LOCATION: PHV6+497, Quintin Salas St, Jaro, Iloilo City
-        debugPrint("🧪 Using DEMO location: $mockLatitude, $mockLongitude");
+        debugPrint("Using DEMO location: $mockLatitude, $mockLongitude");
         _userLocation = geo.Position(
           latitude: mockLatitude,
           longitude: mockLongitude,
@@ -986,18 +828,18 @@ class MapViewModel extends ChangeNotifier {
           speedAccuracy: 0.0,
         );
       } else {
-        // Real GPS location
         final pos = await geo.Geolocator.getCurrentPosition();
         _userLocation = pos;
+        debugPrint(
+          "Using REAL location: ${_userLocation!.latitude}, ${_userLocation!.longitude}",
+        );
       }
 
-      // Draw blue marker at user location
       await _mapDrawingService.drawUserLocationMarker(
         lat: _userLocation!.latitude,
         lng: _userLocation!.longitude,
       );
 
-      // Update vehicle tracking service with new location for ETA calculations
       if (_vehicleTrackingService != null && _isTrackingEnabled) {
         _vehicleTrackingService!.setUserLocation(
           _userLocation!.latitude,
@@ -1005,7 +847,6 @@ class MapViewModel extends ChangeNotifier {
         );
       }
 
-      // Fly to user location
       _mapDrawingService.flyTo(
         lat: _userLocation!.latitude,
         lng: _userLocation!.longitude,
@@ -1020,15 +861,16 @@ class MapViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Fly to the current user location (can be called anytime)
   Future<void> flyToCurrentLocation() async {
     if (_userLocation == null) {
-      // Try to fetch location first if we don't have it
       await fetchUserLocation();
       return;
     }
 
-    // Ensure user location marker is visible
+    debugPrint(
+      "Flying to current location: ${_userLocation!.latitude}, ${_userLocation!.longitude}",
+    );
+
     await _mapDrawingService.drawUserLocationMarker(
       lat: _userLocation!.latitude,
       lng: _userLocation!.longitude,
@@ -1042,33 +884,28 @@ class MapViewModel extends ChangeNotifier {
     );
   }
 
-  /// Fly to any specific location
   void flyToLocation(double lat, double lng, {double zoom = 16.0}) {
+    debugPrint("Flying to specific location: $lat, $lng");
     _mapDrawingService.flyTo(lat: lat, lng: lng, zoom: zoom, durationMs: 1200);
   }
 
-  /// Plan a trip to a place from search results.
+  // Uses Mapbox Search to find a location and calculates efficient routes to it.
   Future<bool> planTripToPlace(Map<String, dynamic> item) async {
-    debugPrint("🔍 planTripToPlace called with: ${item['dest']}");
-    debugPrint("   RouteService loaded: ${_routeService.isLoaded}");
-    debugPrint(
-      "   User location: ${_userLocation?.latitude}, ${_userLocation?.longitude}",
-    );
-    debugPrint("   Cached routes count: ${_routeService.cachedRoutes.length}");
+    debugPrint("planTripToPlace called with: ${item['dest']}");
 
     if (!_routeService.isLoaded) {
-      debugPrint("❌ RouteService not loaded!");
+      debugPrint("RouteService not loaded!");
       return false;
     }
 
     if (_userLocation == null) {
-      debugPrint("❌ User location is null!");
+      debugPrint("User location is null!");
       return false;
     }
 
     final String? mapboxId = item['mapbox_id'];
     if (mapboxId == null) {
-      debugPrint("❌ No mapbox_id in item");
+      debugPrint("No mapbox_id in item");
       return false;
     }
 
@@ -1080,7 +917,7 @@ class MapViewModel extends ChangeNotifier {
       response.fold((result) {
         if (result.features.isNotEmpty) {
           final destPoint = result.features.first.geometry.coordinates;
-          debugPrint("📍 Destination: ${destPoint.lat}, ${destPoint.long}");
+          debugPrint("Destination: ${destPoint.lat}, ${destPoint.long}");
 
           _destinationPoint = Point(
             coordinates: Position(destPoint.long, destPoint.lat),
@@ -1093,7 +930,7 @@ class MapViewModel extends ChangeNotifier {
             destLng: destPoint.long,
           );
 
-          debugPrint("📊 Found ${options.length} route options");
+          debugPrint("Found ${options.length} route options");
 
           if (options.isNotEmpty) {
             _displayList = options.map((o) => o.toDisplayMap()).toList();
@@ -1103,10 +940,10 @@ class MapViewModel extends ChangeNotifier {
             success = true;
             notifyListeners();
           } else {
-            debugPrint("❌ No route options found within walking distance");
+            debugPrint("No route options found within walking distance");
           }
         }
-      }, (failure) => debugPrint("Error: ${failure.message}"));
+      }, (failure) => debugPrint("Search Box Error: ${failure.message}"));
 
       return success;
     } catch (e) {
@@ -1115,25 +952,25 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
-  /// Draw a trip option on the map.
+  // Draws a multi-leg trip on the map, including walking and bus segments.
   Future<void> drawTripOnMap(Map<String, dynamic> item) async {
-    if (_destinationPoint == null || _userLocation == null) return;
+    if (_destinationPoint == null || _userLocation == null) {
+      debugPrint("Cannot draw trip: missing destination or user location");
+      return;
+    }
 
     try {
       final legs = item['legs'] as List;
       final dest = _destinationPoint!.coordinates;
 
       _selectedRouteNum = item['num'];
-      // Set direction index for filtering (use first leg's direction)
       _selectedDirectionIndex = legs.isNotEmpty
           ? (legs[0]['activeDir'] ?? 0)
           : null;
 
-      // 🔥 NEW: Find nearest bus for the selected route relative to pickup
       _highlightedVehicleId = null;
-      List<double>? nearestBusCoords; // [lng, lat]
+      List<double>? nearestBusCoords;
       try {
-        // Find the bus leg that matches the selected route
         final busLeg = legs.firstWhere(
           (l) =>
               (l['mode'] == 'BUS' || l['route'] != null) &&
@@ -1144,8 +981,7 @@ class MapViewModel extends ChangeNotifier {
         if (busLeg != null && _isTrackingEnabled) {
           final pickupLat = busLeg['pickup'][1] as double;
           final pickupLng = busLeg['pickup'][0] as double;
-          final legDirIndex =
-              busLeg['activeDir'] ?? 0; // Get direction from leg
+          final legDirIndex = busLeg['activeDir'] ?? 0;
           final routeCoords = busLeg['coords'] as List<List<double>>?;
           final pickupIndex = busLeg['pickupIndex'] as int? ?? 0;
 
@@ -1153,7 +989,6 @@ class MapViewModel extends ChangeNotifier {
           double minDistance = double.infinity;
 
           for (var v in _trackedVehicles) {
-            // Must match BOTH route AND direction
             final routeMatches =
                 v.position.routeId == _selectedRouteNum ||
                 v.position.routeId.toLowerCase() ==
@@ -1164,7 +999,6 @@ class MapViewModel extends ChangeNotifier {
             final directionMatches = v.position.directionIndex == legDirIndex;
 
             if (routeMatches && directionMatches) {
-              // Skip buses that have already passed the boarding point
               if (routeCoords != null &&
                   _hasBusPassedBoarding(
                     routeCoords,
@@ -1172,7 +1006,7 @@ class MapViewModel extends ChangeNotifier {
                     v.position.lng,
                     pickupIndex,
                   )) {
-                continue; // Bus has passed, skip it
+                continue;
               }
 
               final dist = _haversineDistance(
@@ -1192,7 +1026,7 @@ class MapViewModel extends ChangeNotifier {
             _highlightedVehicleId = bestBus.position.id;
             nearestBusCoords = [bestBus.position.lng, bestBus.position.lat];
             debugPrint(
-              "🎯 Nearest Bus Found: ${bestBus.position.plateNumber} dir=${bestBus.position.directionIndex} (${(minDistance).round()}m away)",
+              "Nearest Bus Found: ${bestBus.position.plateNumber} dir=${bestBus.position.directionIndex} (${(minDistance).round()}m away)",
             );
           }
         }
@@ -1200,7 +1034,6 @@ class MapViewModel extends ChangeNotifier {
         debugPrint("Error finding nearest bus: $e");
       }
 
-      // Calculate trip statistics
       _activeTripStats = _calculateTripStats(item, legs, dest);
 
       notifyListeners();
@@ -1208,13 +1041,9 @@ class MapViewModel extends ChangeNotifier {
       await _mapDrawingService.clearNavigationLayers();
       await _mapDrawingService.clearMarkers();
 
-      // === STEP 1: Draw all lines first (so markers appear on top) ===
-
-      // Collect all draw operations
       final List<Future<void>> drawOperations = [];
       var firstLeg = legs[0];
 
-      // Walk from User to First Boarding
       drawOperations.add(
         _mapDrawingService.drawWalkLine(
           startLat: _userLocation!.latitude,
@@ -1225,11 +1054,9 @@ class MapViewModel extends ChangeNotifier {
         ),
       );
 
-      // Draw all bus paths and transfer walks
       for (int i = 0; i < legs.length; i++) {
         var leg = legs[i];
 
-        // Draw Bus Path
         drawOperations.add(
           _mapDrawingService.drawPolyline(
             coordinates: leg['coords'] as List<List<double>>,
@@ -1240,7 +1067,6 @@ class MapViewModel extends ChangeNotifier {
           ),
         );
 
-        // Transfer walk lines
         if (i < legs.length - 1) {
           var next = legs[i + 1];
           drawOperations.add(
@@ -1255,7 +1081,6 @@ class MapViewModel extends ChangeNotifier {
         }
       }
 
-      // Walk to Destination
       var lastLeg = legs.last;
       drawOperations.add(
         _mapDrawingService.drawWalkLine(
@@ -1267,13 +1092,8 @@ class MapViewModel extends ChangeNotifier {
         ),
       );
 
-      // Execute all draw operations in parallel for faster rendering
       await Future.wait(drawOperations);
 
-      // === STEP 2: Draw all markers AFTER lines (so they appear on top) ===
-      // Queue markers for batch creation (more efficient than individual creates)
-
-      // Calculate walk distance to first pickup for label
       final walkToPickupMeters = _haversineDistance(
         _userLocation!.latitude,
         _userLocation!.longitude,
@@ -1282,20 +1102,17 @@ class MapViewModel extends ChangeNotifier {
       );
       final walkToPickupMin = _estimateWalkTime(walkToPickupMeters);
 
-      // Board marker with walking time
       _mapDrawingService.queueMarker(
         coordinates: firstLeg['pickup'],
         label:
-            "● Board Route ${firstLeg['route']['num']} (~$walkToPickupMin min walk)",
+            "Board Route ${firstLeg['route']['num']} (~$walkToPickupMin min walk)",
         textColor: Colors.blue.shade700,
       );
 
-      // Transfer markers with walking info
       for (int i = 0; i < legs.length - 1; i++) {
         var leg = legs[i];
         var next = legs[i + 1];
 
-        // Calculate transfer walk distance
         final transferWalkMeters = _haversineDistance(
           leg['dropoff'][1],
           leg['dropoff'][0],
@@ -1307,12 +1124,11 @@ class MapViewModel extends ChangeNotifier {
         _mapDrawingService.queueMarker(
           coordinates: leg['dropoff'],
           label:
-              "↔ Transfer to Route ${next['route']['num']} (~$transferWalkMin min)",
+              "Transfer to Route ${next['route']['num']} (~$transferWalkMin min)",
           textColor: Colors.orange.shade700,
         );
       }
 
-      // Calculate walk to destination
       final walkToDestMeters = _haversineDistance(
         (legs.last)['dropoff'][1],
         (legs.last)['dropoff'][0],
@@ -1321,23 +1137,19 @@ class MapViewModel extends ChangeNotifier {
       );
       final walkToDestMin = _estimateWalkTime(walkToDestMeters);
 
-      // Destination marker with walking time
       _mapDrawingService.queueMarker(
         coordinates: [dest.lng.toDouble(), dest.lat.toDouble()],
-        label: "◉ Destination (~$walkToDestMin min walk)",
+        label: "Destination (~$walkToDestMin min walk)",
         textColor: Colors.red.shade700,
       );
 
-      // Flush all markers in one batch
       await _mapDrawingService.flushMarkers();
 
-      // Redraw user location marker (it uses a separate layer so it's preserved)
       await _mapDrawingService.drawUserLocationMarker(
         lat: _userLocation!.latitude,
         lng: _userLocation!.longitude,
       );
 
-      // Redraw vehicle markers for the selected route
       if (_isTrackingEnabled) {
         _drawVehicleMarkers();
       }
@@ -1349,31 +1161,29 @@ class MapViewModel extends ChangeNotifier {
         destLng: dest.lng.toDouble(),
         extraPoint: nearestBusCoords,
       );
+      debugPrint("Trip drawing completed successfully");
     } catch (e) {
       debugPrint("Draw Error: $e");
     }
   }
 
-  /// Toggle "Show All Buses" visibility
   void toggleBusVisibility() {
     _showAllBuses = !_showAllBuses;
 
-    // Ensure tracking is ON if we are showing all buses
     if (_showAllBuses && !_isTrackingEnabled) {
       startVehicleTracking();
     }
 
-    _drawVehicleMarkers(); // Redraw with new visibility rule
+    _drawVehicleMarkers();
     notifyListeners();
   }
 
-  /// 🔥 UPDATED: Select route with Firebase GeoJSON or local assets + landmarks
+  // Selects a route and draws it on the map with landmark markers.
   Future<void> selectRoute(Map<String, dynamic> route) async {
     _selectedRouteNum = route['num'];
-    // Set direction index based on activeDir so buses are filtered correctly
     _selectedDirectionIndex = route['activeDir'] ?? 0;
     _destinationPoint = null;
-    _activeTripStats = null; // Clear trip stats when selecting a route
+    _activeTripStats = null;
     notifyListeners();
 
     await _mapDrawingService.clearNavigationLayers();
@@ -1384,42 +1194,35 @@ class MapViewModel extends ChangeNotifier {
       final directionData = route['directions'][dir];
 
       debugPrint(
-        "📍 Selecting Route ${route['num']} direction $dir: ${directionData['name']}",
+        "Selecting Route ${route['num']} direction $dir: ${directionData['name']}",
       );
 
-      // Check if it's a Firebase path or local asset
       Map<String, dynamic>? geoJsonData;
 
       if (directionData.containsKey('path')) {
-        // Try Firebase path first
         String dbPath = directionData['path'];
         geoJsonData = await loadGeoJson(dbPath);
       }
 
       if (geoJsonData != null) {
-        // Successfully loaded from Firebase
         await _mapDrawingService.drawGeoJsonRoute(
           geoJsonData: geoJsonData,
           colorName: route['color'],
         );
 
-        // ✅ ADD LANDMARK LETTERS from Firebase GeoJSON
         final landmarks = _extractLandmarks(geoJsonData);
         if (landmarks.isNotEmpty) {
           final routeId = route['num']?.toString() ?? 'unknown';
           await _addLandmarkLettersWithLayers(routeId, landmarks);
         }
       } else if (directionData.containsKey('asset')) {
-        // Fallback to local asset if Firebase failed or missing
         String assetPath = directionData['asset'];
 
-        // First draw the route
         await _mapDrawingService.drawRouteFromAsset(
           assetPath: assetPath,
           colorName: route['color'],
         );
 
-        // ✅ Load GeoJSON from asset to get landmarks
         try {
           final String geoJsonString = await rootBundle.loadString(assetPath);
           geoJsonData = jsonDecode(geoJsonString) as Map<String, dynamic>;
@@ -1433,37 +1236,18 @@ class MapViewModel extends ChangeNotifier {
           debugPrint('Could not load landmarks from asset: $e');
         }
       }
-
-      debugPrint("✅ Route ${route['num']} drawn successfully");
+      debugPrint("Route ${route['num']} drawn successfully");
     } catch (e) {
       debugPrint("Select route error: $e");
     }
-
-    // Redraw user location marker (it uses a separate layer so it's preserved)
-    if (_userLocation != null) {
-      await _mapDrawingService.drawUserLocationMarker(
-        lat: _userLocation!.latitude,
-        lng: _userLocation!.longitude,
-      );
-    }
-
-    // Redraw vehicle markers based on new route AND direction selection
-    if (_isTrackingEnabled) {
-      _drawVehicleMarkers();
-    }
-
-    _mapDrawingService.flyTo(lat: 10.7202, lng: 122.5644, zoom: 13.0);
   }
 
-  /// Swap route direction.
   Future<void> swapRouteDirection(Map<String, dynamic> route) async {
     int currentDir = route['activeDir'] ?? 0;
     route['activeDir'] = (currentDir + 1) % route['directions'].length;
 
-    // Update the selected direction index for bus filtering
     _selectedDirectionIndex = route['activeDir'];
 
-    // Update cached route too
     final cachedIndex = _cachedRoutes.indexWhere(
       (r) => r['num'] == route['num'],
     );
@@ -1471,7 +1255,6 @@ class MapViewModel extends ChangeNotifier {
       _cachedRoutes[cachedIndex]['activeDir'] = route['activeDir'];
     }
 
-    // ✅ If this route is currently selected, redraw it with new direction
     if (_selectedRouteNum == route['num']) {
       await selectRoute(route);
     }
@@ -1479,10 +1262,8 @@ class MapViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Clear all selections and reset to default state.
-  /// Clear all selections and reset to default state.
   Future<void> clearSelection() async {
-    // ✅ CLEAR LANDMARKS FIRST
+    debugPrint("Clearing map selections...");
     await _clearLandmarkLayers();
 
     _searchText = '';
@@ -1496,7 +1277,6 @@ class MapViewModel extends ChangeNotifier {
     await _mapDrawingService.clearMarkers();
     await _mapDrawingService.clearBusMarkers();
 
-    // Redraw user location marker
     if (_userLocation != null) {
       await _mapDrawingService.drawUserLocationMarker(
         lat: _userLocation!.latitude,
@@ -1504,7 +1284,6 @@ class MapViewModel extends ChangeNotifier {
       );
     }
 
-    // Redraw vehicle markers (Clean Map: will hide all buses)
     if (_isTrackingEnabled) {
       _drawVehicleMarkers();
     }
@@ -1512,7 +1291,6 @@ class MapViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Handle item selection from the list.
   void handleItemSelection(Map<String, dynamic> item) {
     if (item['type'] == 'trip_option') {
       drawTripOnMap(item);
@@ -1523,7 +1301,7 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
-  /// Calculate trip statistics from trip data
+  // Calculates walking distances, estimated times, and finds the nearest bus for a trip.
   Map<String, dynamic> _calculateTripStats(
     Map<String, dynamic> item,
     List legs,
@@ -1534,7 +1312,6 @@ class MapViewModel extends ChangeNotifier {
     final int totalTime = item['totalTime'] ?? 15;
     final bool isTransfer = legs.length > 1;
 
-    // Calculate walk to first pickup
     if (_userLocation != null && legs.isNotEmpty) {
       final firstLeg = legs[0];
       final pickupLat = firstLeg['pickup'][1] as double;
@@ -1547,7 +1324,6 @@ class MapViewModel extends ChangeNotifier {
       );
     }
 
-    // Calculate transfer walks
     for (int i = 0; i < legs.length - 1; i++) {
       final currentLeg = legs[i];
       final nextLeg = legs[i + 1];
@@ -1563,7 +1339,6 @@ class MapViewModel extends ChangeNotifier {
       );
     }
 
-    // Calculate walk from last dropoff to destination
     if (legs.isNotEmpty) {
       final lastLeg = legs.last;
       final dropoffLat = lastLeg['dropoff'][1] as double;
@@ -1576,15 +1351,14 @@ class MapViewModel extends ChangeNotifier {
       );
     }
 
-    // Estimate walking time using helper
     final walkTimeMin = _estimateWalkTime(totalWalkMeters);
 
-    // Get route names for display
-    final routeNames = legs
-        .map((leg) => 'Route ${leg['route']['num']}')
-        .toList();
+    final routeNames = legs.map((leg) {
+      final num = leg['route']['num'];
+      final dest = leg['route']['dest'] ?? '';
+      return 'Route $num ${dest.isNotEmpty ? '- $dest' : ''}';
+    }).toList();
 
-    // Find next bus for first leg's route - nearest to BOARDING POINT
     String? nextBusEta;
     String? nextBusOccupancy;
     String? nextBusPlate;
@@ -1594,8 +1368,7 @@ class MapViewModel extends ChangeNotifier {
     if (legs.isNotEmpty) {
       final firstLeg = legs[0];
       final firstRouteNum = firstLeg['route']['num'].toString();
-      final firstLegDirIndex =
-          firstLeg['activeDir'] ?? 0; // Get direction from leg
+      final firstLegDirIndex = firstLeg['activeDir'] ?? 0;
       final boardingLat = firstLeg['pickup'][1] as double;
       final boardingLng = firstLeg['pickup'][0] as double;
       final routeCoords = firstLeg['coords'] as List<List<double>>?;
@@ -1605,20 +1378,17 @@ class MapViewModel extends ChangeNotifier {
         final vehicleRouteId = v.position.routeId.toLowerCase();
         final routeNum = firstRouteNum.toLowerCase();
 
-        // Match route number
         final routeMatches =
             vehicleRouteId == routeNum ||
             vehicleRouteId == 'route_$routeNum' ||
             vehicleRouteId == 'route $routeNum' ||
             vehicleRouteId.contains(routeNum);
 
-        // Match direction (only consider buses going the same direction)
         final directionMatches = v.position.directionIndex == firstLegDirIndex;
 
         return routeMatches && directionMatches;
       }).toList();
 
-      // Filter out buses that have already passed the boarding point
       if (routeCoords != null) {
         busesForRoute = busesForRoute.where((v) {
           return !_hasBusPassedBoarding(
@@ -1631,7 +1401,6 @@ class MapViewModel extends ChangeNotifier {
       }
 
       if (busesForRoute.isNotEmpty) {
-        // Sort by distance to BOARDING POINT (not user)
         busesForRoute.sort((a, b) {
           final distA = _haversineDistance(
             a.position.lat,
@@ -1649,7 +1418,6 @@ class MapViewModel extends ChangeNotifier {
         });
         final nearestBus = busesForRoute.first;
 
-        // Calculate distance to boarding point for display
         final distToBoarding = _haversineDistance(
           nearestBus.position.lat,
           nearestBus.position.lng,
@@ -1657,7 +1425,6 @@ class MapViewModel extends ChangeNotifier {
           boardingLng,
         );
 
-        // Estimate ETA based on distance to boarding (assume 20km/h average speed)
         final etaMinutes = (distToBoarding / 1000 / 20 * 60).round();
         nextBusEta = etaMinutes < 1 ? 'Arriving' : '~$etaMinutes min';
         nextBusOccupancy = nearestBus.position.occupancyLabel;
@@ -1665,7 +1432,6 @@ class MapViewModel extends ChangeNotifier {
         nextBusDistanceMeters = nearestBus.distanceToUserMeters;
         nextBusDistanceToBoarding = distToBoarding;
 
-        // Update highlighted bus
         _highlightedVehicleId = nearestBus.position.id;
       }
     }
@@ -1677,7 +1443,6 @@ class MapViewModel extends ChangeNotifier {
       'totalTime': totalTime,
       'isTransfer': isTransfer,
       'routeNames': routeNames,
-      // Next bus info
       'nextBusEta': nextBusEta,
       'nextBusOccupancy': nextBusOccupancy,
       'nextBusPlate': nextBusPlate,
@@ -1687,27 +1452,22 @@ class MapViewModel extends ChangeNotifier {
     };
   }
 
-  /// Estimate walking time in minutes from distance in meters
-  /// Average walking speed: ~80 meters per minute (4.8 km/h)
   int _estimateWalkTime(double meters) {
-    // 80 meters per minute is a comfortable walking pace
     final minutes = (meters / 80).ceil();
-    return minutes < 1 ? 1 : minutes; // Minimum 1 minute
+    return minutes < 1 ? 1 : minutes;
   }
 
-  /// Find the closest point index on a route for a given lat/lng.
-  /// Returns -1 if no point is within maxDistance meters.
   int _findClosestPointIndex(
     List<List<double>> coords,
     double lat,
     double lng, {
-    double maxDistance = 500, // meters
+    double maxDistance = 500,
   }) {
     int closestIdx = -1;
     double minDist = maxDistance;
 
     for (int i = 0; i < coords.length; i++) {
-      final point = coords[i]; // [lng, lat]
+      final point = coords[i];
       final dist = _haversineDistance(lat, lng, point[1], point[0]);
       if (dist < minDist) {
         minDist = dist;
@@ -1717,8 +1477,6 @@ class MapViewModel extends ChangeNotifier {
     return closestIdx;
   }
 
-  /// Check if a bus has passed the boarding point.
-  /// Returns true if the bus is AHEAD of (past) the pickup on the route.
   bool _hasBusPassedBoarding(
     List<List<double>> routeCoords,
     double busLat,
@@ -1726,19 +1484,17 @@ class MapViewModel extends ChangeNotifier {
     int pickupIndex,
   ) {
     final busIndex = _findClosestPointIndex(routeCoords, busLat, busLng);
-    if (busIndex < 0) return false; // Bus not on route, don't filter
-    // If bus's position along the route is past the pickup, it has passed
+    if (busIndex < 0) return false;
     return busIndex > pickupIndex;
   }
 
-  /// Haversine formula to calculate distance between two coordinates in meters
   double _haversineDistance(
     double lat1,
     double lon1,
     double lat2,
     double lon2,
   ) {
-    const double earthRadius = 6371000; // meters
+    const double earthRadius = 6371000;
     final double dLat = _toRadians(lat2 - lat1);
     final double dLon = _toRadians(lon2 - lon1);
     final double a =
@@ -1774,10 +1530,6 @@ class MapViewModel extends ChangeNotifier {
     return landmarks;
   }
 
-  /// Add letter markers to landmarks
-  /// Add start and end markers to landmarks
-  /// Add start and end markers to landmarks
-  /// Add start and end markers to landmarks
   Future<void> _addLandmarkLettersWithLayers(
     String routeId,
     List<Map<String, dynamic>> landmarks,
@@ -1785,14 +1537,11 @@ class MapViewModel extends ChangeNotifier {
     if (_map == null || landmarks.isEmpty) return;
 
     try {
-      // Clear previous layers if they exist
       await _clearLandmarkLayers();
 
-      // Create separate sources for start and end
       final startLandmark = landmarks.first;
       final endLandmark = landmarks.last;
 
-      // Start marker GeoJSON
       final startGeoJson = {
         'type': 'FeatureCollection',
         'features': [
@@ -1807,7 +1556,6 @@ class MapViewModel extends ChangeNotifier {
         ],
       };
 
-      // End marker GeoJSON
       final endGeoJson = {
         'type': 'FeatureCollection',
         'features': [
@@ -1822,7 +1570,6 @@ class MapViewModel extends ChangeNotifier {
         ],
       };
 
-      // Add start source and layers
       await _map!.style.addSource(
         GeoJsonSource(id: 'start-source', data: jsonEncode(startGeoJson)),
       );
@@ -1846,7 +1593,6 @@ class MapViewModel extends ChangeNotifier {
           ..textIgnorePlacement = true,
       );
 
-      // Add end source and layers
       await _map!.style.addSource(
         GeoJsonSource(id: 'end-source', data: jsonEncode(endGeoJson)),
       );
@@ -1871,33 +1617,27 @@ class MapViewModel extends ChangeNotifier {
       );
 
       _currentRouteWithLandmarks = routeId;
-      debugPrint('✅ Added Start and End markers for route $routeId');
+      debugPrint('Added Start and End markers for route $routeId');
     } catch (e) {
-      debugPrint('❌ Error adding landmark layers: $e');
+      debugPrint('Error adding landmark layers: $e');
     }
   }
 
-  /// Clear landmark layers
-  /// Clear landmark layers
-  /// Clear landmark layers
   Future<void> _clearLandmarkLayers() async {
     if (_map == null || _currentRouteWithLandmarks == null) return;
 
     try {
-      // Remove start layers and source
       await _map!.style.removeStyleLayer('start-text');
       await _map!.style.removeStyleLayer('start-circle');
       await _map!.style.removeStyleSource('start-source');
 
-      // Remove end layers and source
       await _map!.style.removeStyleLayer('end-text');
       await _map!.style.removeStyleLayer('end-circle');
       await _map!.style.removeStyleSource('end-source');
 
       _currentRouteWithLandmarks = null;
-      debugPrint('✅ Cleared landmark layers');
+      debugPrint('Cleared landmark layers');
     } catch (e) {
-      // Layers might not exist yet, that's okay
       debugPrint('Note: Landmark layers may not exist yet');
     }
   }
