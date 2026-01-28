@@ -41,6 +41,12 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _localLoading = false);
 
     if (success) {
+      // Check if user is a conductor - only conductors can login
+      // Wait a moment for role check to complete
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      if (!mounted) return;
+
       Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     } else if (authViewModel.errorMessage != null) {
       _showError(authViewModel.errorMessage!);

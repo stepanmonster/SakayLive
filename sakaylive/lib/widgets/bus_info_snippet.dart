@@ -232,6 +232,7 @@ class BusInfoSnippet extends StatelessWidget {
                   label: 'Capacity',
                   value: vehicle.position.occupancyText,
                   valueColor: _getOccupancyColor(),
+                  valueFontSize: 11, // Smaller font for capacity status
                 ),
                 _buildDivider(),
                 // Distance
@@ -305,6 +306,7 @@ class BusInfoSnippet extends StatelessWidget {
     required String label,
     required String value,
     required Color valueColor,
+    double valueFontSize = 13,
   }) {
     return Expanded(
       child: Column(
@@ -327,8 +329,9 @@ class BusInfoSnippet extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             value,
+            textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: valueFontSize,
               fontWeight: FontWeight.w700,
               color: valueColor,
             ),

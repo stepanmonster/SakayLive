@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import 'theme.dart';
 import '../viewmodels/auth_view_model.dart';
 import '../services/auth_service.dart';
+import 'edit_profile_page.dart';
+import 'change_password_page.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
@@ -22,17 +25,34 @@ class _AccountPageState extends State<AccountPage> {
     _loadUserData();
   }
 
-  Future<void> _loadUserData() async {
+    Future<void> _loadUserData() async {
     try {
       final user = _authService.currentUser;
       if (user != null) {
         final isConductor = await _authService.isConductor();
         final isAdmin = await _authService.isAdmin();
         
+        // Fetch user data from Realtime Database
+        final databaseRef = FirebaseDatabase.instance.ref();
+        final userSnapshot = await databaseRef
+            .child('users')
+            .child(user.uid)
+            .get();
+        
+        String username = 'User';
+        
+        if (userSnapshot.exists) {
+          // Get the username from Realtime Database
+          final userData = userSnapshot.value as Map<dynamic, dynamic>?;
+          if (userData != null) {
+            username = userData['username']?.toString() ?? 'User';
+          }
+        }
+        
         setState(() {
           _userData = {
             'email': user.email ?? 'No email',
-            'name': user.displayName ?? 'User',
+            'username': username, // This will show the Full Name
             'isConductor': isConductor,
             'isAdmin': isAdmin,
             'uid': user.uid,
@@ -181,37 +201,42 @@ class _AccountPageState extends State<AccountPage> {
                             ),
                           ),
                           const SizedBox(height: 16),
-                          // Email
                           Text(
-                            _userData?['email'] ?? '',
+                            _userData?['username'] ?? '',
                             style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
                               color: kDarkNavy,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 4),
+                          Text(
+                            _userData?['email'] ?? '',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
                           // Role Badge
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
+                              horizontal: 16,
+                              vertical: 8,
                             ),
                             decoration: BoxDecoration(
                               color: _userData?['isAdmin'] == true
                                   ? const Color(0xFFFEF2F2)
                                   : _userData?['isConductor'] == true
-                                      ? const Color(0xFFF3F4F6)
-                                      : const Color(0xFFF3F4F6),
-                              borderRadius: BorderRadius.circular(16),
+                                      ? const Color(0xFFFFF7ED)
+                                      : const Color(0xFFF0FDF4),
+                              borderRadius: BorderRadius.circular(20),
                               border: Border.all(
                                 color: _userData?['isAdmin'] == true
                                     ? const Color(0xFFFCA5A5)
                                     : _userData?['isConductor'] == true
-                                        ? kDarkNavy
-                                        : kDarkNavy,
+                                        ? const Color(0xFFFDBA74)
+                                        : const Color(0xFF86EFAC),
                               ),
                             ),
                             child: Row(
@@ -223,14 +248,14 @@ class _AccountPageState extends State<AccountPage> {
                                       : _userData?['isConductor'] == true
                                           ? Icons.badge_rounded
                                           : Icons.person_rounded,
-                                  size: 14,
+                                  size: 16,
                                   color: _userData?['isAdmin'] == true
                                       ? const Color(0xFFDC2626)
                                       : _userData?['isConductor'] == true
-                                          ? kDarkNavy
-                                          : kDarkNavy,
+                                          ? const Color(0xFFEA580C)
+                                          : const Color(0xFF16A34A),
                                 ),
-                                const SizedBox(width: 6),
+                                const SizedBox(width: 8),
                                 Text(
                                   _userData?['isAdmin'] == true
                                       ? 'Admin'
@@ -238,13 +263,13 @@ class _AccountPageState extends State<AccountPage> {
                                           ? 'Conductor'
                                           : 'Commuter',
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w700,
                                     color: _userData?['isAdmin'] == true
                                         ? const Color(0xFFDC2626)
                                         : _userData?['isConductor'] == true
-                                            ? kDarkNavy
-                                            : kDarkNavy,
+                                            ? const Color(0xFFEA580C)
+                                            : const Color(0xFF16A34A),
                                   ),
                                 ),
                               ],
@@ -273,8 +298,17 @@ class _AccountPageState extends State<AccountPage> {
                             icon: Icons.person_outline_rounded,
                             title: 'Edit Profile',
                             subtitle: 'Update your name and details',
-                            onTap: () {
-                              // TODO: Navigate to edit profile
+                            onTap: () async {
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const EditProfilePage(),
+                                ),
+                              );
+                              if (result == true) {
+                                // Reload user data after successful update
+                                _loadUserData();
+                              }
                             },
                           ),
                           const SizedBox(height: 8),
@@ -283,7 +317,12 @@ class _AccountPageState extends State<AccountPage> {
                             title: 'Change Password',
                             subtitle: 'Update your password',
                             onTap: () {
-                              // TODO: Navigate to change password
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const ChangePasswordPage(),
+                                ),
+                              );
                             },
                           ),
                           const SizedBox(height: 24),

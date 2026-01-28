@@ -29,10 +29,6 @@ class _SearchPageState extends State<SearchPage> {
   @override
   void initState() {
     super.initState();
-    // Initially show cached routes as "Suggested"
-    _searchResults = widget.cachedRoutes.isNotEmpty
-        ? List.from(widget.cachedRoutes)
-        : List.from(localRoutesData);
     _controller.addListener(_onSearchChanged);
   }
 
@@ -43,44 +39,21 @@ class _SearchPageState extends State<SearchPage> {
     super.dispose();
   }
 
-  List<Map<String, dynamic>> get _routeData =>
-      widget.cachedRoutes.isNotEmpty ? widget.cachedRoutes : localRoutesData;
-
   void _onSearchChanged() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     final query = _controller.text;
 
     if (query.isEmpty) {
       setState(() {
-        _searchResults = List.from(_routeData);
+        _searchResults = [];
       });
       return;
     }
 
-    // 1. Local Search - search in route data
-    final localResults = _routeData.where((route) {
-      final num = route['num'].toString().toLowerCase();
-      final dest = route['dest'].toString().toLowerCase();
-      // Also search in direction names
-      final directions = route['directions'] as List? ?? [];
-      final directionMatch = directions.any((dir) {
-        final name = (dir['name'] ?? '').toString().toLowerCase();
-        return name.contains(query.toLowerCase());
-      });
-      return num.contains(query.toLowerCase()) ||
-          dest.contains(query.toLowerCase()) ||
-          directionMatch;
-    }).toList();
-
-    // Show local results immediately
-    setState(() => _searchResults = localResults);
-
-    // 2. API Search (Debounced)
     _debounce = Timer(const Duration(milliseconds: 500), () async {
       if (query.length < 3) return;
 
       try {
-        // Use session token for billing efficiency
         final response = await widget.searchBoxApi.getSuggestions(query);
         response.fold((success) {
           final formattedApiResults = success.suggestions.map((suggestion) {
@@ -97,7 +70,7 @@ class _SearchPageState extends State<SearchPage> {
 
           if (mounted) {
             setState(() {
-              _searchResults = [...localResults, ...formattedApiResults];
+              _searchResults = formattedApiResults.toList();
             });
           }
         }, (failure) => debugPrint("API Error: ${failure.message}"));
@@ -108,20 +81,7 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Color _getRouteColor(String c) {
-    switch (c) {
-      case 'blue':
-        return Colors.blue.shade700;
-      case 'orange':
-        return Colors.orange.shade700;
-      case 'green':
-        return Colors.green.shade700;
-      case 'red':
-        return Colors.red.shade700;
-      case 'purple':
-        return Colors.purple.shade700;
-      default:
-        return Colors.grey;
-    }
+    return Colors.grey;
   }
 
   @override
@@ -258,16 +218,12 @@ class _SearchPageState extends State<SearchPage> {
                 itemCount: _searchResults.length,
                 itemBuilder: (context, index) {
                   final item = _searchResults[index];
-                  final bool isPlace = item['type'] == 'place';
-                  final color = _getRouteColor(item['color']);
-
+                  final color = Colors.grey;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: Semantics(
                       button: true,
-                      label: isPlace
-                          ? 'Location: ${item['dest']}, ${item['status']}'
-                          : 'Route ${item['num']}: ${item['dest']}',
+                      label: 'Location: ${item['dest']}, ${item['status']}',
                       child: Material(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
@@ -290,37 +246,12 @@ class _SearchPageState extends State<SearchPage> {
                                   width: 48,
                                   height: 48,
                                   decoration: BoxDecoration(
-                                    gradient: isPlace
-                                        ? null
-                                        : LinearGradient(
-                                            begin: Alignment.topLeft,
-                                            end: Alignment.bottomRight,
-                                            colors: [
-                                              color,
-                                              color.withOpacity(0.8),
-                                            ],
-                                          ),
-                                    color: isPlace
-                                        ? const Color(0xFFF3F4F6)
-                                        : null,
+                                    color: const Color(0xFFF3F4F6),
                                     borderRadius: BorderRadius.circular(14),
-                                    boxShadow: isPlace
-                                        ? null
-                                        : [
-                                            BoxShadow(
-                                              color: color.withOpacity(0.3),
-                                              blurRadius: 8,
-                                              offset: const Offset(0, 3),
-                                            ),
-                                          ],
                                   ),
-                                  child: Icon(
-                                    isPlace
-                                        ? Icons.location_on_rounded
-                                        : Icons.directions_bus_rounded,
-                                    color: isPlace
-                                        ? const Color(0xFF6B7280)
-                                        : Colors.white,
+                                  child: const Icon(
+                                    Icons.location_on_rounded,
+                                    color: Color(0xFF6B7280),
                                     size: 24,
                                   ),
                                 ),

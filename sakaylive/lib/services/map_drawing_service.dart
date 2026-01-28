@@ -234,7 +234,8 @@ class MapDrawingService {
         ),
         textField: marker.label,
         textSize: 14.0,
-        textOffset: [0, 0],
+        textAnchor: TextAnchor.TOP,
+        textOffset: [0, 1.5],
         textColor: marker.textColor.value,
         textHaloColor: Colors.white.value,
         textHaloWidth: 3.0,
@@ -248,12 +249,16 @@ class MapDrawingService {
     _pendingMarkers.clear();
   }
 
-  /// Clear all markers.
   Future<void> clearMarkers() async {
     _pendingMarkers.clear();
-    await _annotationManager?.deleteAll();
+    try {
+      if (_annotationManager != null) {
+        await _annotationManager?.deleteAll();
+      }
+    } catch (e) {
+      debugPrint("Resilient: Could not clear markers (map already disposed?)");
+    }
   }
-
   // =========================================================
   // BUS MARKER METHODS
   // =========================================================

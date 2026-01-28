@@ -270,8 +270,6 @@ class SakayBottomSheet extends StatelessWidget {
           // If we want to keep access to routes list, maybe add it as a separate button?
           // Or assume Search bar handles it.
           // I'll keep just this one as requested but maybe add Routes as secondary if needed.
-          // Actually, let's keep "Saved" for now as it was.
-          _actionIcon(Icons.star, "Saved", onTap: () {}),
         ],
       ),
     );
@@ -768,18 +766,18 @@ class _RouteTile extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          route['status'],
-          style: const TextStyle(
-            color: Color(0xFF6B7280),
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        if (!isPlace && route['directions'] != null) ...[
-          const SizedBox(height: 4),
+        if (isPlace)
+          Text(
+            route['status'],
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          )
+        else if (route['directions'] != null)
           Row(
             children: [
               Icon(Icons.swap_horiz_rounded, size: 14, color: color),
@@ -788,9 +786,33 @@ class _RouteTile extends StatelessWidget {
                 child: Text(
                   route['directions'][route['activeDir'] ?? 0]['name'],
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 13, // Increased to match previous subtitle size
                     fontWeight: FontWeight.w600,
                     color: color,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        if (!isPlace) ...[
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Icon(
+                Icons.directions_bus_outlined,
+                size: 14,
+                color: Color(0xFF6B7280),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  route['name'] ?? 'Route ${route['num']}',
+                  style: const TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -820,23 +842,8 @@ class _RouteTile extends StatelessWidget {
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            route['time'],
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 14,
-              color: color,
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
         Semantics(
           button: true,
           label: 'Swap route direction',
@@ -846,14 +853,14 @@ class _RouteTile extends StatelessWidget {
               onTap: onSwap,
               borderRadius: BorderRadius.circular(10),
               child: Container(
-                padding: const EdgeInsets.all(6),
+                padding: const EdgeInsets.all(8), // Slightly larger padding
                 decoration: BoxDecoration(
                   color: const Color(0xFFF3F4F6),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   Icons.compare_arrows_rounded,
-                  size: 18,
+                  size: 20, // Slightly larger icon
                   color: color,
                 ),
               ),
