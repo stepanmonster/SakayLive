@@ -1,34 +1,54 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:sakaylive/data/jeepney_routes.dart';
-import 'package:sakaylive/screens/theme.dart';
+import 'package:provider/provider.dart';
+import 'package:sakaylive/viewmodels/map_view_model.dart';
 
 class RoutesListPage extends StatelessWidget {
   const RoutesListPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // We use a copy of the data so we don't mutate the global state permanently
-    // just by scrolling (though changing direction here is a nice preview).
-    final routes = localRoutesData;
+    // Access routes from MapViewModel via Provider
+    final viewModel = Provider.of<MapViewModel>(context);
+    final routes =
+        viewModel.displayList; // Uses cached routes from Firebase or fallback
 
     return Scaffold(
-      backgroundColor: beige,
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text(
           "All Jeepney Routes",
-          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: Color(0xFF1F2937),
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
         ),
-        backgroundColor: beige,
+        backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black87),
-          onPressed: () => Navigator.pop(context),
+        leading: Container(
+          margin: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Color(0xFF374151),
+              size: 18,
+            ),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(color: const Color(0xFFE5E7EB), height: 1),
         ),
       ),
       body: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         itemCount: routes.length,
         separatorBuilder: (context, index) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
@@ -80,17 +100,17 @@ class _RouteCardState extends State<_RouteCard> {
   Color _getRouteColor(String c) {
     switch (c) {
       case 'blue':
-        return Colors.blue.shade700;
+        return const Color(0xFF3B82F6);
       case 'orange':
-        return Colors.orange.shade700;
+        return const Color(0xFFF97316);
       case 'green':
-        return Colors.green.shade700;
+        return const Color(0xFF22C55E);
       case 'red':
-        return Colors.red.shade700;
+        return const Color(0xFFEF4444);
       case 'purple':
-        return Colors.purple.shade700;
+        return const Color(0xFF8B5CF6);
       default:
-        return Colors.grey.shade700;
+        return const Color(0xFF6B7280);
     }
   }
 
@@ -105,11 +125,11 @@ class _RouteCardState extends State<_RouteCard> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
             offset: const Offset(0, 4),
           ),
         ],
@@ -119,22 +139,27 @@ class _RouteCardState extends State<_RouteCard> {
         child: InkWell(
           onTap: () => widget.onTap(widget.routeData),
           borderRadius: BorderRadius.circular(16),
+          splashColor: color.withOpacity(0.1),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
               children: [
                 // --- 1. BUS ICON (Left) ---
                 Container(
-                  width: 50,
-                  height: 50,
+                  width: 52,
+                  height: 52,
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.15),
-                    shape: BoxShape.circle,
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(Icons.directions_bus, color: color, size: 28),
+                  child: Icon(
+                    Icons.directions_bus_rounded,
+                    color: color,
+                    size: 26,
+                  ),
                 ),
 
-                const SizedBox(width: 16),
+                const SizedBox(width: 14),
 
                 // --- 2. INFO COLUMN ---
                 Expanded(
@@ -142,37 +167,38 @@ class _RouteCardState extends State<_RouteCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Header: Route Number + Name (Using Wrap for Flow)
-                      Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 8.0, // Horizontal gap
-                        runSpacing: 4.0, // Vertical gap if it wraps
+                      Row(
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
+                              horizontal: 8,
+                              vertical: 4,
                             ),
                             decoration: BoxDecoration(
                               color: color,
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               "Route $routeNum",
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontWeight: FontWeight.bold,
+                                fontWeight: FontWeight.w700,
                                 fontSize: 12,
                               ),
                             ),
                           ),
-                          Text(
-                            routeDest,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                              color: Colors.black87,
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              routeDest,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                color: Color(0xFF1F2937),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            // Removed maxLines/overflow to allow full wrapping
                           ),
                         ],
                       ),
@@ -182,17 +208,24 @@ class _RouteCardState extends State<_RouteCard> {
                       // Direction
                       Row(
                         children: [
-                          const Icon(
-                            Icons.arrow_forward_rounded,
-                            size: 14,
-                            color: Colors.grey,
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 12,
+                              color: Color(0xFF6B7280),
+                            ),
                           ),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               "To: $directionName",
-                              style: TextStyle(
-                                color: Colors.grey[800],
+                              style: const TextStyle(
+                                color: Color(0xFF6B7280),
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -203,22 +236,26 @@ class _RouteCardState extends State<_RouteCard> {
                         ],
                       ),
 
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
 
                       // Active Buses Indicator
                       Row(
                         children: [
-                          const Icon(
-                            Icons.circle,
-                            size: 8,
-                            color: Colors.green,
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF22C55E),
+                              shape: BoxShape.circle,
+                            ),
                           ),
                           const SizedBox(width: 6),
                           Text(
                             "$_activeBusesCount active buses",
-                            style: TextStyle(
-                              color: Colors.grey[600],
+                            style: const TextStyle(
+                              color: Color(0xFF9CA3AF),
                               fontSize: 12,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
@@ -228,10 +265,16 @@ class _RouteCardState extends State<_RouteCard> {
                 ),
 
                 // --- 3. SWAP BUTTON (Right) ---
-                IconButton(
-                  onPressed: _toggleDirection,
-                  icon: Icon(Icons.swap_vert_circle, color: color, size: 32),
-                  tooltip: "Change Direction",
+                Container(
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: IconButton(
+                    onPressed: _toggleDirection,
+                    icon: Icon(Icons.swap_vert_rounded, color: color, size: 24),
+                    tooltip: "Change Direction",
+                  ),
                 ),
               ],
             ),

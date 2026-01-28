@@ -24,70 +24,112 @@ class AuthService {
     await _db.child('userEmails').child(_emailKey(email)).set(uid);
   }
 
-  // Add this PUBLIC method to AuthService
+  // PUBLIC method to get route data
   Future<DataSnapshot> getRouteData(String path) async {
     final snapshot = await _db.child(path).get();
     return snapshot;
   }
 
-  // ✅ NEW: Check if user is conductor (custom claims first, then RTDB)
   Future<bool> isConductor() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      print('🔍 isConductor: No current user');
+      return false;
+    }
+
+    // Custom claims first (keep existing)
+    try {
+      final idTokenResult = await user.getIdTokenResult(true);
+      if (idTokenResult.claims?['conductor'] == true) {
+        print('🔍 isConductor: TRUE via custom claims');
+        return true;
+      }
+    } catch (_) {} // Silent fail
+
+    // RTDB - ✅ ONLY returns true for exact "conductor" string
+    try {
+      final snap = await _db.child('users').child(user.uid).child('role').get();
+      print(
+        '🔍 isConductor RTDB check - uid: ${user.uid}, exists: ${snap.exists}, value: ${snap.value}',
+      );
+
+      // ✅ STRICT: Only true if role exists AND equals "conductor"
+      if (snap.exists) {
+        final role = snap.value?.toString().trim().toLowerCase();
+        print('🔍 isConductor role after processing: "$role"');
+        return role == 'conductor';
+      }
+      return false; // No role field = false
+    } catch (e) {
+      print('🔍 isConductor error: $e');
+      return false; // Any error = false
+    }
+  }
+
+  Future<bool> isAdmin() async {
     final user = _auth.currentUser;
     if (user == null) return false;
 
     try {
-      // Try custom claims first (most secure)
+      // Custom claims first (future-proof)
       final idTokenResult = await user.getIdTokenResult(true);
-      if (idTokenResult.claims?['conductor'] == true) {
-        return true;
-      }
-    } catch (e) {
-      print('Error reading custom claims: $e');
-    }
+      if (idTokenResult.claims?['admin'] == true) return true;
+    } catch (_) {}
 
-    // Fallback to RTDB role
+    // RTDB manual flag (your current method)
     try {
-      final userSnap = await _db.child('users').child(user.uid).child('isConductor').get();
-      return userSnap.value == true;
+      final snap = await _db
+          .child('users')
+          .child(user.uid)
+          .child('isAdmin')
+          .get();
+      print('🔍 DEBUG RTDB isAdmin: ${snap.value}'); // Add this
+      return snap.value == true;
     } catch (e) {
-      print('Error reading RTDB role: $e');
+      print('🔍 isAdmin error: $e');
       return false;
     }
   }
 
-  Future<User?> signUpWithEmail(
+  Future<void> signUpWithEmail(
     String email,
     String password,
-    String username, {
+    String name, {
     bool isConductor = false,
+    String? conductorLicense,
+    String? employeeNumber,
   }) async {
-    try {
-      UserCredential result = await _auth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password.trim(),
-      );
-      
-      User? user = result.user;
-      
-      if (user != null) {
-        final normalizedEmail = email.trim().toLowerCase();
+    // Create auth user
+    final credential = await _auth.createUserWithEmailAndPassword(
+      email: email.trim(),
+      password: password.trim(),
+    );
 
-        await _db.child('users').child(user.uid).set({
-          'userId': user.uid,
-          'username': username,
-          'email': normalizedEmail,
-          'role': isConductor ? 'conductor' : 'user',
-          'isConductor': isConductor,  // ✅ Boolean for RTDB rules
-          'createdAt': DateTime.now().millisecondsSinceEpoch,
-        });
+    final uid = credential.user!.uid;
 
-        await indexEmailForLookup(normalizedEmail, user.uid);
-      }
-      
-      return user;
-    } on FirebaseAuthException catch (e) {
-      print('Sign up error: ${e.message}');
-      rethrow;
+    // Base user record
+    await _db.child('users/$uid').set({
+      'userId': uid,
+      'email': email.trim(),
+      'username': name.trim(),
+      'role': null, // admin will set 'conductor' after approval
+      'createdAt': ServerValue.timestamp,
+    });
+
+    // Index email for quick lookup (optional but you already support it)
+    await indexEmailForLookup(email, uid);
+
+    // Create conductor request if requested
+    if (isConductor) {
+      await _db.child('conductorRequests/$uid').set({
+        'userId': uid,
+        'username': name.trim(),
+        'email': email.trim(),
+        'conductorLicense': conductorLicense?.trim(),
+        'employeeNumber': employeeNumber?.trim(),
+        'status': 'pending',
+        'createdAt': ServerValue.timestamp,
+      });
     }
   }
 
