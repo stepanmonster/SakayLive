@@ -17,6 +17,7 @@ class AuthViewModel extends ChangeNotifier {
   bool? get isAdmin => _isAdmin;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  AuthService get authService => _authService;
 
   AuthViewModel() {
     print('🔍 AuthViewModel: Constructor called');
@@ -39,6 +40,10 @@ class AuthViewModel extends ChangeNotifier {
       }
     });
   }
+
+  Future<void> refreshRoles() async {
+  await _checkRole();
+}
 
   Future<void> _checkRole() async {
     if (_isLoading) return;

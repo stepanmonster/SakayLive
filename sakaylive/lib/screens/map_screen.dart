@@ -272,10 +272,10 @@ class _MapScreenState extends State<MapScreen> {
         (headerH + searchH + buttonsH + bottomPadding) / screenHeight - 0.02;
 
     return FutureBuilder<bool>(
-      future: Future.value(authVM.isConductor ?? false),
-      initialData: authVM.isConductor ?? false,
+      future: authVM.authService.isConductor(),  // ✅ Live DB call every rebuild
+      initialData: false,
       builder: (context, snapshot) {
-        final bool isConductor = authVM.isConductor ?? false;
+        final bool isConductor = snapshot.data ?? false;
         final bool isLoggedIn = authVM.isLoggedIn;
 
         return Scaffold(
@@ -533,50 +533,52 @@ class _MapScreenState extends State<MapScreen> {
     final user = authVM.user;
     final isLoggedIn = authVM.isLoggedIn;
 
-    return Drawer(
-      backgroundColor: const Color(0xFFFFFFFFF),
-      child: SafeArea(
-        child: Column(
-          children: [
-            // Header with logo
-            Container(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFFEFF6FF), Color(0xFFFFFFFFF)],
+return Drawer(
+  backgroundColor: const Color(0xFFFFFFFF),
+  child: SafeArea(
+    child: Column(
+      children: [
+        // Simple header - centered logo on white background
+        SizedBox(
+          height: 110,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Center(
+                child: Image.asset(
+                  'assets/images/sakaylive_logo.png', 
+                  height: 50,
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Image.asset('assets/images/sakaylive_logo.png', height: 50),
-                  const SizedBox(height: 16),
-                  if (isLoggedIn) ...[
-                    Text(
-                      'Welcome back!',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
-                        fontWeight: FontWeight.w500,
-                      ),
+              if (isLoggedIn) ...[
+                const Text(
+                  'Welcome back!',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF666666), // grey.shade600
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 4),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 48),
+                  child: Text(
+                    user?.email ?? 'User',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF2D2D2D),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      user?.email ?? 'User',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF2D2D2D),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
-            ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
             const SizedBox(height: 8),
             // Menu items
             Expanded(

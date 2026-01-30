@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'theme.dart';
 import 'signup_page.dart';
 import '../viewmodels/auth_view_model.dart';
+import '../screens/app.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -41,16 +42,18 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _localLoading = false);
 
     if (success) {
-      // Check if user is a conductor - only conductors can login
-      // Wait a moment for role check to complete
-      await Future.delayed(const Duration(milliseconds: 500));
-
       if (!mounted) return;
 
-      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
-    } else if (authViewModel.errorMessage != null) {
-      _showError(authViewModel.errorMessage!);
-      authViewModel.clearError();
+      await Future.delayed(Duration(milliseconds: 100));
+      await authViewModel.refreshRoles();
+        print('🔍 POST-LOGIN DEBUG: isAdmin=${authViewModel.isAdmin}');
+      
+      // Replace entire stack with AuthWrapper directly
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthWrapper()),
+        (route) => false,
+      );
     }
   }
 

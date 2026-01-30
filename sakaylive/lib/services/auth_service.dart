@@ -71,25 +71,21 @@ class AuthService {
     if (user == null) return false;
 
     try {
-      // Custom claims first (future-proof)
-      final idTokenResult = await user.getIdTokenResult(true);
-      if (idTokenResult.claims?['admin'] == true) return true;
-    } catch (_) {}
-
-    // RTDB manual flag (your current method)
-    try {
-      final snap = await _db
-          .child('users')
-          .child(user.uid)
-          .child('isAdmin')
-          .get();
-      print('🔍 DEBUG RTDB isAdmin: ${snap.value}'); // Add this
-      return snap.value == true;
+      final snap = await _db.child('users').child(user.uid).child('isAdmin').get();
+      print('🔍 isAdmin RAW SNAPSHOT: ${snap.value} (${snap.value.runtimeType})');
+      
+      // ✅ TYPE-SAFE CHECK - handles String, bool, null
+      if (snap.exists && snap.value != null) {
+        final value = snap.value.toString().toLowerCase();
+        return value == 'true';
+      }
+      return false;
     } catch (e) {
-      print('🔍 isAdmin error: $e');
+      print('🔍 isAdmin ERROR: $e');
       return false;
     }
   }
+
 
   Future<void> signUpWithEmail(
     String email,
