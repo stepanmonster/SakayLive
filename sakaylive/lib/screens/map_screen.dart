@@ -529,7 +529,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   /// Builds the navigation drawer with user info, menu, and debug tools.
-  Widget _buildDrawer(AuthViewModel authVM, bool isConductor) {
+  Widget _buildDrawer(AuthViewModel authVM, bool isLoggedIn) {
     final user = authVM.user;
     final isLoggedIn = authVM.isLoggedIn;
 
@@ -584,7 +584,7 @@ class _MapScreenState extends State<MapScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 children: [
                   // Conductor Panel - Always visible for conductors
-                  if (isConductor)
+                  if (isLoggedIn)
                     _buildDrawerItem(
                       icon: Icons.admin_panel_settings_rounded,
                       label: 'Conductor Panel',
@@ -898,7 +898,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  /// Builds the location mode toggle (Demo/Live) for the drawer.
   Widget _buildLocationModeToggle(BuildContext context) {
     final viewModel = Provider.of<MapViewModel>(context);
     final isDemoMode = viewModel.useDemoMode;
@@ -963,34 +962,82 @@ class _MapScreenState extends State<MapScreen> {
             child: Switch(
               value: !isDemoMode,
               onChanged: (value) async {
+                if (value) {
+                  // Switching to Live Mode: Request permissions first
+                  bool serviceEnabled =
+                      await geo.Geolocator.isLocationServiceEnabled();
+                  if (!serviceEnabled) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Location services are disabled.'),
+                        ),
+                      );
+                    }
+                    return;
+                  }
+
+                  geo.LocationPermission permission =
+                      await geo.Geolocator.checkPermission();
+                  if (permission == geo.LocationPermission.denied) {
+                    permission = await geo.Geolocator.requestPermission();
+                    if (permission == geo.LocationPermission.denied) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Location permissions are denied'),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+                  }
+
+                  if (permission == geo.LocationPermission.deniedForever) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Location permissions are permanently denied.',
+                          ),
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                }
+
                 viewModel.setDemoMode(!value);
                 viewModel.clearUserLocation();
                 await viewModel.fetchUserLocation();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Row(
-                      children: [
-                        Icon(
-                          value
-                              ? Icons.gps_fixed_rounded
-                              : Icons.science_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          value
-                              ? 'Switched to Live Location mode'
-                              : 'Switched to Demo mode',
-                        ),
-                      ],
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Row(
+                        children: [
+                          Icon(
+                            value
+                                ? Icons.gps_fixed_rounded
+                                : Icons.science_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            value
+                                ? 'Switched to Live Location mode'
+                                : 'Switched to Demo mode',
+                          ),
+                        ],
+                      ),
+                      backgroundColor: value
+                          ? const Color(0xFF22C55E)
+                          : const Color(0xFFF59E0B),
+                      duration: const Duration(seconds: 2),
                     ),
-                    backgroundColor: value
-                        ? const Color(0xFF22C55E)
-                        : const Color(0xFFF59E0B),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
+                  );
+                }
               },
               activeColor: const Color(0xFF22C55E),
               inactiveThumbColor: const Color(0xFFF59E0B),
