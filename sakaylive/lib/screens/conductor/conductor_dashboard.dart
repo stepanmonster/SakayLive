@@ -289,38 +289,40 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
+Widget build(BuildContext context) {
+  if (_loading) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
+    );
+  }
 
-    return ValueListenableBuilder<TripSession>(
-      valueListenable: TripStateController.instance.session,
-      builder: (context, trip, _) {
-        final tripActive = trip.isActive;
-        final tripDuration = trip.duration;
+  return ValueListenableBuilder<TripSession>(
+    valueListenable: TripStateController.instance.session,
+    builder: (context, trip, _) {
+      final tripActive = trip.isActive;
+      final tripDuration = trip.duration;
 
-        return ValueListenableBuilder<BusStatus>(
-          valueListenable: TripStateController.instance.status,
-          builder: (context, busStatus, __) {
-            final ring = _colorForStatus(busStatus);
+      return ValueListenableBuilder<BusStatus>(
+        valueListenable: TripStateController.instance.status,
+        builder: (context, busStatus, __) {
+          final ring = _colorForStatus(busStatus);
 
-            return ValueListenableBuilder<DateTime?>(
-              valueListenable: TripStateController.instance.lastUpdated,
-              builder: (context, lastUpdated, ___) {
-                return Scaffold(
-                  appBar: AppBar(
-                    title: const Text("Conductor Panel"),
-                    leading: IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
+          return ValueListenableBuilder<DateTime?>(
+            valueListenable: TripStateController.instance.lastUpdated,
+            builder: (context, lastUpdated, ___) {
+              final double bottomPadding = 12.0 - MediaQuery.of(context).padding.bottom * 0.1;
+              return Scaffold(
+                appBar: AppBar(
+                  title: const Text("Conductor Panel"),
+                  leading: IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () => Navigator.of(context).pop(),
                   ),
-                  body: SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                ),
+                body: SafeArea(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(16, 12, 16, bottomPadding),
+                    child: SingleChildScrollView(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -435,11 +437,9 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
 
                               final ids = vehicles.map((v) => v.id).toSet();
 
-                              // If current selection is missing/invalid, pick first
                               if (selectedBusId == null ||
                                   !ids.contains(selectedBusId)) {
                                 selectedBusId = vehicles.first.id;
-                                // Fire-and-forget persist
                                 _saveSelectedBusId(selectedBusId!);
                               }
 
@@ -456,8 +456,6 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                                     child: Text(label),
                                   );
                                 }).toList(),
-
-                                // ✅ Recommended: disable switching while trip active
                                 onChanged: tripActive
                                     ? null
                                     : (busId) async {
@@ -465,7 +463,6 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                                         setState(() => selectedBusId = busId);
                                         await _saveSelectedBusId(busId);
                                       },
-
                                 decoration: const InputDecoration(
                                   border: OutlineInputBorder(),
                                   contentPadding: EdgeInsets.symmetric(
@@ -480,156 +477,157 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                           const SizedBox(height: 14),
 
                           // WATCH / STATUS DIAL
-                          Expanded(
-                            child: Center(
-                              child: Opacity(
-                                opacity: tripActive ? 1.0 : 0.6,
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      "Current Status: ${_labelForStatus(busStatus)}",
+                          Center(
+                            child: Opacity(
+                              opacity: tripActive ? 1.0 : 0.6,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    "Current Status: ${_labelForStatus(busStatus)}",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      color: ring,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+
+                                  SizedBox(
+                                    width: 260,
+                                    height: 260,
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        Container(
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                ring.withOpacity(0.95),
+                                                ring.withOpacity(0.55),
+                                              ],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: ring.withOpacity(0.28),
+                                                blurRadius: 22,
+                                                spreadRadius: 2,
+                                                offset: const Offset(0, 10),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+
+                                        ClipOval(
+                                          child: CustomPaint(
+                                            size: const Size(260, 260),
+                                            painter: _TickPainter(
+                                              color: Colors.white
+                                                  .withOpacity(0.92),
+                                            ),
+                                          ),
+                                        ),
+
+                                        Container(
+                                          width: 205,
+                                          height: 205,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.white,
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black
+                                                    .withOpacity(0.08),
+                                                blurRadius: 10,
+                                                offset: const Offset(0, 6),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+
+                                        CustomPaint(
+                                          size: const Size(205, 205),
+                                          painter: _HandsPainter(
+                                            now: _now,
+                                            accent: ring,
+                                          ),
+                                        ),
+
+                                        Container(
+                                          width: 82,
+                                          height: 82,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: ring.withOpacity(0.12),
+                                            border: Border.all(
+                                              color: ring.withOpacity(0.35),
+                                              width: 2,
+                                            ),
+                                          ),
+                                          child: Icon(
+                                            Icons.directions_bus,
+                                            size: 40,
+                                            color: ring,
+                                          ),
+                                        ),
+                                        // ✅ REMOVED Positioned - no more overlap!
+                                      ],
+                                    ),
+                                  ),
+
+                                  // ✅ NEW: Status label BELOW clock (no overlap)
+                                  Container(
+                                    width: double.infinity,
+                                    margin: const EdgeInsets.symmetric(
+                                      horizontal: 40,
+                                      vertical: 12,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: ring.withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: ring.withOpacity(0.35),
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      busStatus.name.toUpperCase(),
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w900,
                                         color: ring,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 14,
+                                        letterSpacing: 1.2,
                                       ),
                                     ),
-                                    const SizedBox(height: 10),
+                                  ),
 
-                                    SizedBox(
-                                      width: 260,
-                                      height: 260,
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          Container(
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              gradient: LinearGradient(
-                                                colors: [
-                                                  ring.withOpacity(0.95),
-                                                  ring.withOpacity(0.55),
-                                                ],
-                                                begin: Alignment.topLeft,
-                                                end: Alignment.bottomRight,
-                                              ),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: ring.withOpacity(0.28),
-                                                  blurRadius: 22,
-                                                  spreadRadius: 2,
-                                                  offset: const Offset(0, 10),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-
-                                          // ✅ Clip so ticks never "explode" outside the circle
-                                          ClipOval(
-                                            child: CustomPaint(
-                                              size: const Size(260, 260),
-                                              painter: _TickPainter(
-                                                color: Colors.white
-                                                    .withOpacity(0.92),
-                                              ),
-                                            ),
-                                          ),
-
-                                          Container(
-                                            width: 205,
-                                            height: 205,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: Colors.white,
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: Colors.black
-                                                      .withOpacity(0.08),
-                                                  blurRadius: 10,
-                                                  offset: const Offset(0, 6),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-
-                                          CustomPaint(
-                                            size: const Size(205, 205),
-                                            painter: _HandsPainter(
-                                              now: _now,
-                                              accent: ring,
-                                            ),
-                                          ),
-
-                                          Container(
-                                            width: 82,
-                                            height: 82,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: ring.withOpacity(0.12),
-                                              border: Border.all(
-                                                color: ring.withOpacity(0.35),
-                                                width: 2,
-                                              ),
-                                            ),
-                                            child: Icon(
-                                              Icons.directions_bus,
-                                              size: 40,
-                                              color: ring,
-                                            ),
-                                          ),
-
-                                          Positioned(
-                                            bottom: 16,
-                                            child: Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 14,
-                                                vertical: 8,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: ring.withOpacity(0.12),
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
-                                                border: Border.all(
-                                                  color: ring.withOpacity(0.35),
-                                                ),
-                                              ),
-                                              child: Text(
-                                                busStatus.name.toUpperCase(),
-                                                style: TextStyle(
-                                                  color: ring,
-                                                  fontWeight: FontWeight.w900,
-                                                  fontSize: 12,
-                                                  letterSpacing: 0.6,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    _playfulCaption(_now, busStatus),
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.w700,
                                     ),
-
-                                    const SizedBox(height: 10),
-                                    Text(
-                                      _playfulCaption(_now, busStatus),
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: Colors.grey,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    _lastUpdateText(lastUpdated),
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.w600,
                                     ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      _lastUpdateText(lastUpdated),
-                                      style: const TextStyle(
-                                        color: Colors.grey,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -671,14 +669,15 @@ class _ConductorDashboardState extends State<ConductorDashboard> {
                       ),
                     ),
                   ),
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
+                ),
+              );
+            },
+          );
+        },
+      );
+    },
+  );
+}
 
   Widget _bigStatusButton({
     required bool enabled,
